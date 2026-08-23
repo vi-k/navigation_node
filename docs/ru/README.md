@@ -1,7 +1,10 @@
 # navigation_node
 
-> Перевод `README.md` (blob `03e82f059c7baae6e3ee84f398af3483269e2016`).
+> Перевод `README.md` (blob `814473c57d191ee6da249d24b2b5f28281f05adc`).
 > Правится в том же коммите, что и оригинал; проверка — `sh docs/ru/check.sh`.
+
+[![pub version](https://img.shields.io/pub/v/navigation_node)](https://pub.dev/packages/navigation_node)
+[![license](https://img.shields.io/github/license/vi-k/navigation_node)](https://github.com/vi-k/navigation_node/blob/main/LICENSE)
 
 Вложенный `Navigator` для Flutter. Диалог, шторка или экран, открытые через
 него, строятся **под** тем экраном, который их открыл, а не над ним, — поэтому

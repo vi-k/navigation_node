@@ -1,0 +1,12 @@
+dartdoc:
+  # One library, no topics: what a category would group is the whole package.
+  # What is kept from scopo's config is the strictness — a reference that does
+  # not resolve is an error rather than a line in the log, because a dead
+  # `[Name]` reads as a link and behaves as plain text.
+  showUndocumentedCategories: true
+  ignore:
+    - ambiguous-doc-reference
+  errors:
+    - unresolved-doc-reference
+  warnings:
+    - tool-error

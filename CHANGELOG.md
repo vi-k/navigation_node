@@ -1,3 +1,12 @@
+## 0.1.1
+
+* Fix an error reported from a node naming the wrong library. Anything that
+  falls over while an asynchronous `onPop` is being answered — the question
+  itself, a confirmation dialog, the guard on the route — is reported through
+  `FlutterError.reportError`, and the report said it came from `scopo`. It says
+  `navigation_node` now. Nothing else changed: the same failures are reported
+  at the same moments, and a press that raised is still simply not acted on.
+
 ## 0.1.0
 
 * First release. `NavigationNode`, `NodeNavigatorState` and

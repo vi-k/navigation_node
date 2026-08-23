@@ -1,5 +1,8 @@
 # navigation_node
 
+[![pub version](https://img.shields.io/pub/v/navigation_node)](https://pub.dev/packages/navigation_node)
+[![license](https://img.shields.io/github/license/vi-k/navigation_node)](https://github.com/vi-k/navigation_node/blob/main/LICENSE)
+
 A nested `Navigator` for Flutter. A dialog, a bottom sheet or a pushed screen
 opened through it is built **below** the screen that opened it rather than above
 it, so everything that screen puts over its subtree is still reachable from

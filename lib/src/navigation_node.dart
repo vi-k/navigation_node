@@ -235,7 +235,7 @@ final class _NavigationNodeState extends State<NavigationNode> {
               FlutterErrorDetails(
                 exception: error,
                 stack: stackTrace,
-                library: 'scopo',
+                library: 'navigation_node',
                 context: ErrorDescription(
                   'while deciding what a system back does in a '
                   'NavigationNode',

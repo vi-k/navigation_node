@@ -952,6 +952,38 @@ void main() {
       expect(tester.takeException(), isA<StateError>());
     });
 
+    // The report says which library it came from, and that name is read by
+    // whoever collects errors from a running application. It said `scopo`
+    // until this package left that one.
+    testWidgets('a report from the node names this package', (tester) async {
+      final reported = <FlutterErrorDetails>[];
+      final previous = FlutterError.onError;
+      // Passed on rather than swallowed: the binding is what records an error
+      // for `takeException`, and a test that keeps one to itself leaves the
+      // suite waiting for a frame that never settles.
+      FlutterError.onError = (details) {
+        reported.add(details);
+        previous?.call(details);
+      };
+      addTearDown(() => FlutterError.onError = previous);
+
+      await tester.pumpWidget(
+        _OnPopHost(
+          onPop: (context, result) =>
+              Future<bool>.error(StateError('the dialog fell over')),
+        ),
+      );
+      await tester.tap(find.text('go'));
+      await tester.pumpAndSettle();
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isA<StateError>());
+      expect(reported, hasLength(1));
+      expect(reported.single.library, 'navigation_node');
+    });
+
     // The other half of the same chain: the question answered, and what the
     // answer sets off falls over. `then(onValue, onError:)` hands `onError` the
     // failures of the future it is chained to and nothing else, so a raise
