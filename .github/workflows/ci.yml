@@ -1,0 +1,77 @@
+# The gate of `AGENTS.md` §4, run by a machine instead of by a person.
+#
+# Every step below is one of the commands the regimen requires before a merge,
+# in the regimen's order, on the toolchain the package declares as its floor:
+# Flutter 3.27.0, which carries Dart 3.6.0. Locally that version comes from
+# `fvm`; here the action pins the same number directly, so `flutter` and `dart`
+# on the PATH are already the right ones and no `fvm` prefix is needed.
+name: gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same ref makes this run pointless.
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.27.0
+          channel: stable
+          cache: true
+
+      - name: Toolchain
+        run: flutter --version
+
+      - name: Dependencies
+        run: flutter pub get
+
+      # First, while nothing has written to the tree yet: the dry run counts an
+      # uncommitted change as a warning, and one warning is a non-zero exit.
+      - name: Publish dry run
+        run: dart pub publish --dry-run
+
+      - name: Translations answer their originals
+        run: sh docs/ru/check.sh
+
+      - name: Formatting
+        run: dart format --set-exit-if-changed lib test
+
+      # Before the root analyze, not after it: `flutter analyze` walks the whole
+      # tree, `example/` included, and on a fresh clone that package is not
+      # resolved yet.
+      - name: Dependencies of the example
+        run: cd example && flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Dartdoc
+        run: dart doc --dry-run
+
+      # Tests run with the leak tracker enabled — see
+      # `test/flutter_test_config.dart`.
+      - name: Tests
+        run: flutter test
+
+      - name: Example, analyzed and tested
+        run: |
+          cd example
+          flutter analyze
+          flutter test
+
+      # The example's lockfile is committed and is supposed to be the one this
+      # toolchain resolves. The `pub get` above rewrites it if it is not, and
+      # then this step says so.
+      - name: Nothing drifted
+        run: git diff --exit-code
