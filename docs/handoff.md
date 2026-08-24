@@ -5,10 +5,22 @@
 
 ## С чего начать после рестарта
 
-1. Прочитай этот файл целиком, потом `AGENTS.md`.
+1. Прочитай этот файл целиком, потом `docs/backlog.md` и `AGENTS.md`.
+   Устройство пакета изнутри — в `docs/architecture.md`, когда понадобится.
 2. Сверься: `git log --oneline -5`, `git status`.
 3. **Очереди работ нет.** Открыто одно решение владельца — публиковать ли
    **0.1.1**: она подготовлена и лежит в `main`, на pub.dev сейчас 0.1.0.
+   `docs/backlog.md` пуст.
+4. **Ветка `main`, других веток и worktree нет. Всё запушено.** Проверяй сам:
+   `git log --oneline origin/main..HEAD` — должно быть пусто.
+5. **CI зелёная на голове** — `.github/workflows/ci.yml`, тот же гейт, что и
+   локальный, плюс сьюта примера и `git diff --exit-code`, на чистом клоне.
+   Смотреть прогоны: `gh run list`, `gh run view <id> --log-failed`
+   (`gh` авторизован как `vi-k`).
+6. **Не под контролем версий:** `.fvmrc` и `.fvm/` (тулчейн заводится
+   `fvm use 3.27.0`), корневой `pubspec.lock` — это библиотека, — `build/` и
+   `.dart_tool/`. Лок примера, наоборот, закоммичен и пересоздан закреплённым
+   тулчейном: на него смотрит шаг «Nothing drifted».
 
 ## Откуда взялся этот репозиторий
 
@@ -44,8 +56,11 @@ README «Where it comes from» и ссылка на `scopo_demo` из README п�
 Версия **0.1.0 опубликована на pub.dev 2026-08-24** — первая версия пакета,
 [pub.dev/packages/navigation_node](https://pub.dev/packages/navigation_node).
 **0.1.1 подготовлена и не опубликована:** в ней одна правка — отчёт об ошибке
-из узла называл библиотеку `scopo`, теперь `navigation_node`. Публиковать — по
-явной просьбе владельца (`AGENTS.md` §5).
+из узла называл библиотеку `scopo`, теперь `navigation_node`. Правка приехала
+вместе с переездом и держится тестом «a report from the node names this
+package», который читает `FlutterErrorDetails.library`; нагруженность проверена
+откатом — без правки он падает с `Actual: 'scopo'`. Публиковать — по явной
+просьбе владельца (`AGENTS.md` §5).
 
 **Окно ломающих правок этим закрыто.** До публикации переименовать или убрать
 публичное имя стоило ноль; теперь каждое такое изменение стоит версии, и решать
@@ -64,12 +79,31 @@ README «Where it comes from» и ссылка на `scopo_demo` из README п�
 - `fvm flutter test` — **44 теста**, все зелёные;
 - `fvm flutter analyze` — 0 issues (корень обходит и `example/`);
 - `fvm dart format --set-exit-if-changed lib test` — 0 changed (4 файла);
-- `fvm dart doc --dry-run` — 0 warnings, 0 errors;
-- `fvm dart pub publish --dry-run` — 0 warnings, архив ~30 КБ;
-- `sh docs/ru/check.sh` — переводы актуальны: 2;
 - `fvm dart doc --dry-run` — 0 warnings, 0 errors, уже со строгим
   `dartdoc_options.yaml`;
+- `fvm dart pub publish --dry-run` — 0 warnings, архив ~30 КБ;
+- `sh docs/ru/check.sh` — переводы актуальны: 2;
 - пример: `analyze` чистый, **17 тестов** зелёные.
+
+## Грабли, на которые не стоит наступать второй раз
+
+**Перехватил `FlutterError.onError` — передай дальше.** Тест, который читает
+`FlutterErrorDetails`, ставит свой обработчик; если не позвать из него прежний,
+биндинг не получает ошибку, `tester.takeException()` возвращает `null`, а
+`pumpAndSettle` ждёт своего десятиминутного таймаута вместо двух секунд. Так и
+выглядело: прогон висел ровно 10:01. Пишется так:
+
+```dart
+final previous = FlutterError.onError;
+FlutterError.onError = (details) {
+  reported.add(details);
+  previous?.call(details);
+};
+addTearDown(() => FlutterError.onError = previous);
+```
+
+**У `macOS` нет `timeout`.** `timeout 240 fvm flutter test` кончается кодом
+127 и пустым выводом — это «команда не найдена», а не упавший прогон.
 
 ## Что связано со scopo и ждёт публикации
 
@@ -83,5 +117,7 @@ pub.dev стоит scopo 0.10.0, в которой виджет ещё внут�
 
 ## Проверки
 
-Команды — в `AGENTS.md` §4. Числа — выше. Тулчейн: Flutter 3.27.0 через fvm;
+Команды — в `AGENTS.md` §6. Числа — выше. Правка, тронувшая только
+`docs/handoff.md`, `docs/backlog.md` или `docs/records/`, гейта не касается:
+эти файлы ни одна из семи команд не читает. Тулчейн: Flutter 3.27.0 через fvm;
 `.fvmrc` не под контролем версий, как и в scopo, — заводится `fvm use 3.27.0`.
