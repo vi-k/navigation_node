@@ -344,6 +344,29 @@ final class _NavigationNodeState extends State<NavigationNode> {
       'instead: that expression makes a new key on every rebuild.',
     );
 
+    // The route table of the application, borrowed for the navigator inside.
+    // A node is handed one page and nothing else, so a name pushed inside it
+    // reached a navigator that had never heard of `routes:` and ended in an
+    // assertion of the framework — while the application had declared its
+    // routes in the one place there is to declare them. Asking the navigator
+    // above for its own factory makes a name mean inside the node what it
+    // means outside, and the route then lands below the node, which is what
+    // pushing it there was for. Nested nodes chain: each borrows from the one
+    // above, which borrowed from the one above that.
+    //
+    // Read here rather than through [PreviousNavigatorExtension.previous],
+    // which walks up from the navigator inside — and that one does not exist
+    // yet on the first build. Read on every build rather than remembered, and
+    // nothing is subscribed to: `Navigator.maybeOf` walks ancestors instead.
+    // That is enough, because what an application hands over is a method of
+    // its own state that reads its `routes` as they are, so a table that
+    // changes is followed without anybody rebuilding for it.
+    //
+    // This cannot give the node an initial route of its own. A navigator
+    // generates one only when its page list is empty
+    // ([NavigatorState.restoreState]), and this page list never is.
+    final above = Navigator.maybeOf(context);
+
     return _NodeBackDispatcher(
       node: this,
       child: _NodeNavigator(
@@ -351,6 +374,8 @@ final class _NavigationNodeState extends State<NavigationNode> {
         node: this,
         pages: _pages,
         onDidRemovePage: _onDidRemovePage,
+        onGenerateRoute: above?.widget.onGenerateRoute,
+        onUnknownRoute: above?.widget.onUnknownRoute,
       ),
     );
   }
@@ -622,6 +647,8 @@ final class _NodeNavigator extends Navigator {
     required this.node,
     super.pages,
     super.onDidRemovePage,
+    super.onGenerateRoute,
+    super.onUnknownRoute,
   });
 
   @override

@@ -1166,6 +1166,57 @@ void main() {
       );
     });
 
+    // An application declares its routes in one place, and a node used to know
+    // nothing about them: a named push inside it reached a navigator with no
+    // route table and ended in an assertion of the framework. The node's
+    // navigator asks the navigator above for the table instead, so a name means
+    // inside the node what it means outside — and the route lands below the
+    // node, which is the whole reason for pushing it there.
+    testWidgets('a named route pushed inside the node lands inside it', (
+      tester,
+    ) async {
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(_NamedRoutesHost(navigatorKey: key));
+
+      expect(
+        key.currentState!.canPop(),
+        isFalse,
+        reason: 'the node starts on its own page and generates no initial '
+            'route of its own, whatever the application calls its first one',
+      );
+
+      unawaited(key.currentState!.pushNamed<void>('/details'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('details: secret'),
+        findsOneWidget,
+        reason: 'the route was built below the node, so what the screen put '
+            'above it is among its ancestors',
+      );
+      expect(
+        key.currentState!.canPop(),
+        isTrue,
+        reason: 'and it went inside the node',
+      );
+      expect(
+        tester.state<NavigatorState>(find.byType(Navigator).first).canPop(),
+        isFalse,
+        reason: 'not onto the navigator above, which is where a name used to '
+            'have to be pushed',
+      );
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('node content'),
+        findsOneWidget,
+        reason: 'and back closes it the way it closes any route inside a node',
+      );
+    });
+
     // The hook may answer straight away, and one that raises there raises into
     // the loop [ModalRoute.onPopInvokedWithResult] runs over the entries of the
     // route -- so a `PopScope` of the application registered beside the node is
@@ -2356,5 +2407,33 @@ final class _SwitchableNodeHost extends StatelessWidget {
             ),
           ),
         ),
+      );
+}
+
+/// An application that declares its routes the usual way, with a node on the
+/// first of them.
+final class _NamedRoutesHost extends StatelessWidget {
+  final GlobalKey<NodeNavigatorState> navigatorKey;
+
+  const _NamedRoutesHost({required this.navigatorKey});
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        routes: {
+          '/': (context) => _ConfigScope(
+                config: const _Config('secret'),
+                child: NavigationNode(
+                  navigatorKey: navigatorKey,
+                  child: const _OnPopNodeContent(),
+                ),
+              ),
+          '/details': (context) => Scaffold(
+                body: Center(
+                  child: Text(
+                    'details: ${_ConfigScope.maybeOf(context)?.value}',
+                  ),
+                ),
+              ),
+        },
       );
 }

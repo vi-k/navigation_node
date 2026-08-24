@@ -109,13 +109,23 @@ empty.
 `PreviousNavigatorExtension.previous` gives the navigator above a given one,
 which is how a node forwards a pop it cannot handle itself.
 
+Named routes work inside a node, and they land inside it. The nested navigator
+borrows the route table of the navigator above — `MaterialApp.routes`, or its
+`onGenerateRoute` — so `Navigator.of(context).pushNamed('/details')` from inside
+a node builds `/details` below the node, with everything the screen put over its
+subtree still among its ancestors. Nested nodes chain: each borrows from the one
+above it.
+
 ## What a node does not do
 
-The nested navigator is built from a page list of one page and is handed nothing
-else, so **named routes do not work inside a node**: `pushNamed` and its
-relatives reach a navigator with no `onGenerateRoute` and end in an assertion of
-the framework. Push a `Route` — a `MaterialPageRoute`, or whatever the screen
-builds.
+**Nothing inside a node is restored.** The nested navigator is given no
+`restorationScopeId`, so a stack pushed inside a node does not survive the
+application being killed and brought back: it starts again from the node's own
+page.
+
+**The navigator inside a node takes no observers.** A `RouteObserver` or an
+analytics observer of the application does not see what is pushed and popped in
+there.
 
 **A `Hero` does not fly between routes pushed inside a node.** That is Flutter's
 own doing rather than the node's: a `Navigator` hides the `HeroControllerScope`

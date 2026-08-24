@@ -1,5 +1,15 @@
 ## 0.1.1
 
+* Named routes work inside a node now, and land inside it. The nested navigator
+  is handed one page and nothing else, so `pushNamed` from inside a node reached
+  a navigator that had never heard of `routes:` and ended in an assertion of the
+  framework — while the application had declared its routes in the one place
+  there is to declare them. A node borrows the route table of the navigator
+  above, so a name means the same thing inside a node as outside it, and
+  `/details` pushed from inside is built below the node, with the screen's own
+  scope among its ancestors. Nested nodes chain, each borrowing from the one
+  above. Still not forwarded, and now written down in `README.md`: observers,
+  and a restoration scope.
 * Fix `popUntil` never finishing inside a node. `NavigatorState.popUntil` pops
   and then looks at what is left on top, over and over until its predicate
   matches — and a pop that reaches the node's own page takes nothing, since a
