@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flutter/material.dart';
 
 /// What happened, in the order it happened.
@@ -10,7 +12,10 @@ class Journal extends ChangeNotifier {
   final _entries = <JournalEntry>[];
 
   /// Newest last.
-  List<JournalEntry> get entries => List.unmodifiable(_entries);
+  ///
+  /// A view rather than a copy: this is read on every build of the panel, and
+  /// the list it reads grows by two entries on every system back.
+  late final List<JournalEntry> entries = UnmodifiableListView(_entries);
 
   /// Records something the app did on its own.
   void log(String message) => _add(JournalEntry(message, JournalKind.plain));

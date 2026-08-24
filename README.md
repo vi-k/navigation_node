@@ -87,9 +87,14 @@ no arrow there, since it keeps a pop to itself and there would be nowhere to go.
 `onPop` answers a pop the route is *asked* about, which is more than the system
 back and less than every pop. The node is a `PopEntry` of the route it stands
 on, so `Navigator.maybePop()` and the back arrow of an `AppBar` above the node
-reach the hook as much as a system back does. `Navigator.pop()` does not: it
-takes the route rather than asking it, and no `PopEntry` is consulted. A button
-of your own that has to go through the hook wants `maybePop`.
+reach the hook as much as a system back does. A `Navigator.pop()` of a route
+*inside* the node does not: it takes that route rather than asking it, and no
+`PopEntry` is consulted. On the node's first page there is no such route to
+take — the pop leaves the node instead, and leaving is asking the navigator
+above, whose route this node is a `PopEntry` of, so the hook is reached there as
+well. A button of your own that has to go through the hook wants `maybePop`; one
+that must leave without being asked about wants
+`Navigator.of(context).previous?.pop()`.
 
 A node stands aside for a press the route will handle by itself. A `Drawer` or a
 `showBottomSheet` above the node puts a local history entry on the route the
@@ -103,6 +108,24 @@ empty.
 
 `PreviousNavigatorExtension.previous` gives the navigator above a given one,
 which is how a node forwards a pop it cannot handle itself.
+
+## What a node does not do
+
+The nested navigator is built from a page list of one page and is handed nothing
+else, so **named routes do not work inside a node**: `pushNamed` and its
+relatives reach a navigator with no `onGenerateRoute` and end in an assertion of
+the framework. Push a `Route` — a `MaterialPageRoute`, or whatever the screen
+builds.
+
+**A `Hero` does not fly between routes pushed inside a node.** That is Flutter's
+own doing rather than the node's: a `Navigator` hides the `HeroControllerScope`
+above it from its own subtree, so every nested navigator is left without a hero
+controller until the application puts one there. Wrap the node in a
+`HeroControllerScope` of your own if you want the animation.
+
+**`popUntil` stops on the node's own page.** The walk it makes is about the
+stack of one navigator, and a node never empties itself, so a predicate matching
+nothing inside the node ends there rather than leaving.
 
 ## One node per tab: `NavigationNode(enabled:)`
 

@@ -31,10 +31,15 @@ final class NavigationNode extends StatefulWidget {
   /// The system back is the usual one, and not the only one: the node is a
   /// [PopEntry] of that route, so everything that asks the route reaches here
   /// — `Navigator.maybePop()`, and the back arrow of an `AppBar` **above** the
-  /// node as much as one inside it. What does not reach here is
-  /// `Navigator.pop()`: it takes the route rather than asking it, and no
-  /// [PopEntry] of any kind is consulted. If a screen has a button of its own
-  /// that must go through this hook, give it `maybePop`.
+  /// node as much as one inside it. What does not reach here is a
+  /// `Navigator.pop()` of a route *inside* the node: it takes that route
+  /// rather than asking it, and no [PopEntry] of any kind is consulted. On the
+  /// node's first page there is no such route to take — the pop leaves the
+  /// node instead, and leaving is asking the navigator above, whose route this
+  /// node is a [PopEntry] of. The hook is reached there as well. A screen
+  /// button that must go through this hook wants `maybePop`; one that must
+  /// leave without being asked about wants
+  /// `Navigator.of(context).previous?.pop()`.
   ///
   /// Return `true` to let the pop through, `false` to keep the route, or a
   /// [Future] to decide after asking — a confirmation dialog, usually. The
@@ -167,23 +172,24 @@ final class _NavigationNodeState extends State<NavigationNode> {
   /// .addLocalHistoryEntry` ends in `changedInternalState`, which marks the
   /// route dirty and dispatches no notification. A remembered answer is
   /// therefore an answer from before the drawer opened.
-  bool get _handlesBackInside {
-    final navigator = _navigatorKey.currentState;
-
-    return navigator != null && navigator.mounted && navigator.canPop();
-  }
+  bool get _handlesBackInside => _navigator?.canPop() ?? false;
 
   /// Decides what a system back does once the node itself cannot answer it.
   ///
   /// Refusing takes no undoing: nothing has been spent to get here, so the next
   /// press arrives exactly as this one did.
   ///
-  /// [outerContext] is the node's own, from above the nested navigator. It is
-  /// what the route the node stands on is found from, and it is not what the
-  /// hook is given: a dialog opened from there with `useRootNavigator: false`
-  /// would land on the navigator of the application, above everything the node
-  /// exists to stay below.
-  void _decideOutside(BuildContext outerContext, Object? result) {
+  /// [dispatcher] is what stands on the route for the node, and the route it
+  /// stands on is where a pop would land. Asked rather than looked up again:
+  /// the two can part, and only one of them is right. A node that has been
+  /// switched off has given its place up and holds no route at all, while a
+  /// fresh lookup would still find the one the node is no longer standing on.
+  ///
+  /// What the hook is given is neither of those. It is a context from *inside*
+  /// the node, so that a dialog opened with `useRootNavigator: false` belongs
+  /// to the node rather than to the navigator of the application, above
+  /// everything the node exists to stay below.
+  void _decideOutside(_NodeBackDispatcherState dispatcher, Object? result) {
     // A decision already under way is the answer to this press too. Nothing
     // queues: a second back while a confirmation is on screen must not ask a
     // second time, and two answers of `true` must not take two routes.
@@ -199,11 +205,28 @@ final class _NavigationNodeState extends State<NavigationNode> {
       return;
     }
 
-    // ignore: discarded_futures
-    switch (widget.onPop?.call(navigator.context, result)) {
+    final route = dispatcher._route;
+
+    final FutureOr<bool>? answer;
+    try {
+      // ignore: discarded_futures
+      answer = widget.onPop?.call(navigator.context, result);
+    } on Object catch (error, stackTrace) {
+      // A hook that answers straight away is user code like any other, and it
+      // raises into the loop [ModalRoute.onPopInvokedWithResult] runs over the
+      // entries of the route -- taking the rest of that loop with it, so that
+      // a `PopScope` of the application beside this node is never called, and
+      // arriving at the application as a failed platform message. Reported
+      // instead, the way an answer that falls over later is: the press is
+      // simply not acted on.
+      _reportBackFailure(error, stackTrace, _decidingBack);
+
+      return;
+    }
+
+    switch (answer) {
       case final Future<bool> future:
         _deciding = true;
-        final route = ModalRoute.of(outerContext);
 
         // Anything in the chain below that falls over -- the question itself, a
         // confirmation dialog raising, or the pop, which runs user code of its
@@ -218,35 +241,32 @@ final class _NavigationNodeState extends State<NavigationNode> {
         // callback beside it, so the pop's own failures went unheld.
         unawaited(
           future.whenComplete(() => _deciding = false).then((canPop) {
-            // The world does not wait for an answer. The route the node
-            // sits on may have been closed by something else, or buried
-            // under a newer one -- and a pop would then take whatever is on
-            // top instead of what was asked about. A node that is gone
-            // answers for itself: its key resolves to nothing, which is why
-            // the walk below is null-safe and no `mounted` check is needed
-            // on top of it.
-            if (!canPop || (route != null && !route.isCurrent)) {
+            // The world does not wait for an answer. The route the node sits
+            // on may have been closed by something else, or buried under a
+            // newer one -- and a pop would then take whatever is on top
+            // instead of what was asked about. The node itself may have been
+            // switched off while the question was on screen, which gives up
+            // its place on that route as surely as leaving the tree does.
+            // [_NodeBackDispatcherState._stillOn] is all three questions.
+            if (!canPop || !dispatcher._stillOn(route)) {
               return;
             }
 
             _popOutside(route, result);
           }).onError<Object>((error, stackTrace) {
-            FlutterError.reportError(
-              FlutterErrorDetails(
-                exception: error,
-                stack: stackTrace,
-                library: 'navigation_node',
-                context: ErrorDescription(
-                  'while deciding what a system back does in a '
-                  'NavigationNode',
-                ),
-              ),
-            );
+            _reportBackFailure(error, stackTrace, _decidingBack);
           }),
         );
       case final bool? canPop:
         if (canPop ?? true) {
-          _popOutside(ModalRoute.of(outerContext), result);
+          try {
+            _popOutside(route, result);
+          } on Object catch (error, stackTrace) {
+            // Reading the route means reading every guard on it, and a guard
+            // that raises here raises where the asynchronous path would have
+            // reported it. Same press, same answer.
+            _reportBackFailure(error, stackTrace, _decidingBack);
+          }
         }
     }
   }
@@ -278,7 +298,7 @@ final class _NavigationNodeState extends State<NavigationNode> {
       return;
     }
 
-    final previous = _navigatorKey.currentState?.previous;
+    final previous = _navigator?.previous;
     if (previous == null || route == null) {
       return;
     }
@@ -415,18 +435,62 @@ final class _NodeBackDispatcherState extends State<_NodeBackDispatcher>
       return;
     }
 
-    if (_innerCanPop || widget.node._handlesBackInside) {
-      // The pop belongs to the navigator below, and only that navigator knows
-      // whether its top route accepts it. Nothing outside the node moves, so
-      // onPop and isRoot stay out of this.
-      // ignore: discarded_futures
-      widget.node._navigator?._popInside(result);
+    final navigator = widget.node._navigator;
+    if (navigator != null && (_innerCanPop || widget.node._handlesBackInside)) {
+      _askInside(navigator, result);
 
       return;
     }
 
-    widget.node._decideOutside(context, result);
+    widget.node._decideOutside(this, result);
   }
+
+  /// Offers the press to the navigator below, and takes it back if nothing
+  /// there wanted it.
+  ///
+  /// [_innerCanPop] is heard from the whole subtree, and a `Navigator` or a
+  /// `Router` of the application's own, deeper than the node's, announces
+  /// itself through it exactly as the node's own navigator does -- while the
+  /// only navigator this node can hand a press to is its own. Offering is
+  /// therefore a question and not a handover: [NodeNavigatorState._popInside]
+  /// answers `true` when something below took the press -- a route of its own
+  /// was given up, or a guard on the node's page refused and was told so --
+  /// and `false` when nothing below did anything at all.
+  ///
+  /// That `false` used to be dropped along with the future carrying it, and the
+  /// press with it: the hook was not asked, nothing outside moved, and a press
+  /// that would have closed the route had there been no node simply vanished.
+  ///
+  /// The answer arrives a microtask later, since [NavigatorState.maybePop] is
+  /// asynchronous by construction, and what it sets off is the same work
+  /// [_NavigationNodeState._decideOutside] does at press time -- including its
+  /// refusal to act on a decision that no longer applies.
+  void _askInside(NodeNavigatorState navigator, Object? result) {
+    unawaited(
+      navigator._popInside(result).then((tookIt) {
+        if (!tookIt && mounted) {
+          widget.node._decideOutside(this, result);
+        }
+      }).onError<Object>((error, stackTrace) {
+        _reportBackFailure(
+          error,
+          stackTrace,
+          'while offering a system back to the navigator inside a '
+          'NavigationNode',
+        );
+      }),
+    );
+  }
+
+  /// Whether the node still stands where it stood when a press arrived.
+  ///
+  /// Asked of a decision that took time: the route may have been closed by
+  /// something else or buried under a newer one, and the node may have been
+  /// switched off, which gives up its place on that route as surely as leaving
+  /// the tree does. [_route] is `null` for both of those last two, and identity
+  /// is what tells a node that has moved from one that has not.
+  bool _stillOn(ModalRoute<dynamic>? route) =>
+      route != null && identical(_route, route) && route.isCurrent;
 
   bool _watchInnerStack(NavigationNotification notification) {
     if (notification.canHandlePop != _innerCanPop) {
@@ -434,7 +498,18 @@ final class _NodeBackDispatcherState extends State<_NodeBackDispatcher>
       canPopNotifier.notifyOfChange();
     }
 
-    return false;
+    // Heard, and -- while the node is switched off -- kept here. A node that
+    // has given up its place on the route has nothing to say about a press,
+    // and what its own subtree announces is nobody else's news: let it past,
+    // and `WidgetsApp` tells the platform that the framework handles back, for
+    // a stack this node has promised not to touch and which is usually not on
+    // screen at all. The route goes on announcing what it holds for itself,
+    // and it announces it without this node -- which is the whole of what
+    // being switched off means.
+    //
+    // Kept rather than ignored: the value is what the node answers with the
+    // moment it is switched back on, and nothing dispatches it again then.
+    return !widget.node.widget.enabled;
   }
 
   @override
@@ -584,6 +659,22 @@ final class NodeNavigatorState extends NavigatorState {
   Future<bool> _popInside(Object? result) => super.maybePop(result);
 
   @override
+  void popUntil(RoutePredicate predicate) {
+    // The walk ends on the node's own page, whatever the predicate says.
+    // [NavigatorState.popUntil] pops and then looks at what is left on top,
+    // over and over until the predicate matches what it finds there -- and a
+    // pop that reaches this page takes nothing, since a node never empties
+    // itself. A predicate matching nothing inside the node therefore left that
+    // loop looking at the same route for ever, in the frame it was called
+    // from.
+    //
+    // Stopping is the whole of the answer. Handing the pop over the way [pop]
+    // does would take a route above for a walk that was never about the
+    // outside, and it would do it once for every turn of the loop.
+    super.popUntil((route) => route is _NodePageRoute || predicate(route));
+  }
+
+  @override
   void pop<T extends Object?>([T? result]) {
     if (canPop()) {
       super.pop(result);
@@ -596,10 +687,30 @@ final class NodeNavigatorState extends NavigatorState {
     // stack — a hole where the screen used to be. A root node keeps the pop
     // instead; any other node hands it to the navigator above, every time and
     // not merely the first.
-    if (!_node.widget.isRoot) {
-      // ignore: discarded_futures
-      previous?.maybePop(result);
+    if (_node.widget.isRoot) {
+      return;
     }
+
+    final previous = this.previous;
+    if (previous == null) {
+      return;
+    }
+
+    // Held, rather than dropped with an `ignore`. Asking the navigator above
+    // runs the guards of its route and then the route itself, both of them
+    // user code, and a raise there would surface as an unhandled zone error
+    // far from the press that caused it.
+    unawaited(
+      previous.maybePop(result).onError<Object>((error, stackTrace) {
+        _reportBackFailure(
+          error,
+          stackTrace,
+          'while handing a pop to the navigator above a NavigationNode',
+        );
+
+        return false;
+      }),
+    );
   }
 
   @override
@@ -648,4 +759,27 @@ extension PreviousNavigatorExtension on NavigatorState {
 
     return prevNavigator;
   }
+}
+
+/// What the node was doing when it could not re-throw.
+const _decidingBack = 'while deciding what a system back does in a '
+    'NavigationNode';
+
+/// Reports what a node cannot re-throw.
+///
+/// A press is answered in more than one place, and most of those answer into a
+/// future nobody holds or into a loop the framework runs over the entries of a
+/// route. A failure there would surface as an unhandled zone error far from the
+/// widget that caused it, or take the rest of that loop with it. Reported
+/// instead, it arrives with this package named on it; the press is simply not
+/// acted on, and the next one is asked as usual.
+void _reportBackFailure(Object error, StackTrace? stack, String whileDoing) {
+  FlutterError.reportError(
+    FlutterErrorDetails(
+      exception: error,
+      stack: stack,
+      library: 'navigation_node',
+      context: ErrorDescription(whileDoing),
+    ),
+  );
 }

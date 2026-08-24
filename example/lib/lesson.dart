@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'journal.dart';
@@ -200,9 +202,19 @@ class PushButton extends StatelessWidget {
           final journal = JournalScope.of(context, listen: false)
             ..log('pushed "$pageName"');
 
-          Navigator.of(context)
-              .push<void>(MaterialPageRoute<void>(builder: builder))
-              .then((_) => journal.log('"$pageName" was closed'));
+          // The future a push returns completes when the route is popped — and
+          // with a failure if the route falls over on its way out. Held rather
+          // than dropped: an error nobody holds surfaces far from the button
+          // that caused it, which is the one thing this package is careful not
+          // to do.
+          unawaited(
+            Navigator.of(context)
+                .push<void>(MaterialPageRoute<void>(builder: builder))
+                .then((_) => journal.log('"$pageName" was closed'))
+                .onError<Object>((error, stackTrace) {
+              journal.log('"$pageName" fell over: $error');
+            }),
+          );
         },
         child: Text(label),
       );

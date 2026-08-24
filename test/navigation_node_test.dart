@@ -1128,6 +1128,286 @@ void main() {
         reason: 'the root navigator still holds a single route',
       );
     });
+
+    // `popUntil` walks the stack by popping and looking at what is left on
+    // top, and it ends when the predicate matches what it finds there. A node
+    // whose `pop` takes nothing once its own page is all that is left leaves
+    // that walk looking at the same route for ever -- a synchronous loop in the
+    // frame it was called from. The predicate below counts and gives itself an
+    // way out, because the alternative to giving up is a test that never ends.
+    testWidgets('popUntil stops at the page of the node', (tester) async {
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _Host(useNode: true, isRoot: true, navigatorKey: key),
+      );
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      var asked = 0;
+      key.currentState!.popUntil((route) {
+        asked++;
+
+        return asked > 20;
+      });
+      await tester.pumpAndSettle();
+
+      expect(
+        asked,
+        lessThan(20),
+        reason: 'a predicate that matches nothing inside the node must end on '
+            'the page of the node rather than spin',
+      );
+      expect(
+        find.text('open'),
+        findsOneWidget,
+        reason: 'and what it ends on is that page, still there',
+      );
+    });
+
+    // The hook may answer straight away, and one that raises there raises into
+    // the loop [ModalRoute.onPopInvokedWithResult] runs over the entries of the
+    // route -- so a `PopScope` of the application registered beside the node is
+    // never called, and the failure reaches the application as a broken
+    // platform message. Held and reported, the way an answer that falls over
+    // later is.
+    testWidgets('an onPop that raises straight away is reported', (
+      tester,
+    ) async {
+      final reported = <FlutterErrorDetails>[];
+      final previous = FlutterError.onError;
+      FlutterError.onError = (details) {
+        reported.add(details);
+        previous?.call(details);
+      };
+      addTearDown(() => FlutterError.onError = previous);
+
+      await tester.pumpWidget(
+        _OnPopHost(
+          onPop: (context, result) => throw StateError('the hook fell over'),
+        ),
+      );
+      await tester.tap(find.text('go'));
+      await tester.pumpAndSettle();
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isA<StateError>());
+      expect(reported, hasLength(1));
+      expect(reported.single.library, 'navigation_node');
+      expect(
+        find.text('go'),
+        findsNothing,
+        reason: 'a press that raised is simply not acted on',
+      );
+    });
+
+    // The same for the other half of the synchronous path: the hook allows the
+    // pop, and the guard the node reads on its way out is what falls over.
+    testWidgets('a guard that raises for a straight answer is reported', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _RaisingGuardHost(
+          onPop: (context, result) {
+            _RaisingGuardState.instance!.armOnce();
+
+            return true;
+          },
+        ),
+      );
+      await tester.tap(find.text('go'));
+      await tester.pumpAndSettle();
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.takeException(),
+        isA<StateError>(),
+        reason: 'asking the route is user code like any other, and a straight '
+            'answer is held no less than a late one',
+      );
+      expect(find.text('go'), findsNothing);
+    });
+
+    // And the third way out of the node: the pop handed to the navigator above
+    // by `pop` on the node's first page. It runs the guards of the route up
+    // there, and it used to run them into a future nobody held.
+    testWidgets('a raise while handing a pop over is reported', (tester) async {
+      final reported = <FlutterErrorDetails>[];
+      final previous = FlutterError.onError;
+      FlutterError.onError = (details) {
+        reported.add(details);
+        previous?.call(details);
+      };
+      addTearDown(() => FlutterError.onError = previous);
+
+      await tester.pumpWidget(
+        _RaisingGuardHost(onPop: (context, result) => true),
+      );
+      await tester.tap(find.text('go'));
+      await tester.pumpAndSettle();
+
+      _RaisingGuardState.instance!.armOnce();
+      await tester.tap(find.text('pop the node'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isA<StateError>());
+      expect(
+        reported.map((details) => details.library),
+        ['navigation_node'],
+        reason: 'the failure belongs to the handover, and the handover is the '
+            "node's",
+      );
+    });
+
+    // What a node hears from its own subtree is news about a stack the
+    // application has just told it to stay out of. Let past, it reaches
+    // `WidgetsApp`, which tells the platform the framework handles back -- and
+    // the predictive back gesture is then spent on a stack nobody can see.
+    testWidgets('a switched-off node keeps what it hears to itself', (
+      tester,
+    ) async {
+      final key = GlobalKey<NodeNavigatorState>();
+      final heard = <bool>[];
+
+      await tester.pumpWidget(
+        _NotificationHost(enabled: false, navigatorKey: key, heard: heard),
+      );
+      await tester.pumpAndSettle();
+      heard.clear();
+
+      unawaited(
+        key.currentState!.push(
+          MaterialPageRoute<void>(
+            builder: (context) =>
+                const Scaffold(body: Center(child: Text('hidden'))),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        heard,
+        isEmpty,
+        reason: 'a node with no place on the route has nothing to announce '
+            'about a stack it has promised not to touch',
+      );
+    });
+
+    testWidgets('control: a node on duty lets the same news past', (
+      tester,
+    ) async {
+      final key = GlobalKey<NodeNavigatorState>();
+      final heard = <bool>[];
+
+      await tester.pumpWidget(
+        _NotificationHost(enabled: true, navigatorKey: key, heard: heard),
+      );
+      await tester.pumpAndSettle();
+      heard.clear();
+
+      unawaited(
+        key.currentState!.push(
+          MaterialPageRoute<void>(
+            builder: (context) =>
+                const Scaffold(body: Center(child: Text('shown'))),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        heard,
+        contains(true),
+        reason: 'a node that does stand on the route says so, and the '
+            'framework needs to hear it',
+      );
+    });
+
+    // A question outlives the moment it was asked, and the application may
+    // answer a different one in between: switching the node off says it no
+    // longer stands on that route, and an answer arriving afterwards would
+    // take a route from a place the node has given up.
+    testWidgets(
+        'an answer arriving after the node is switched off takes '
+        'nothing', (tester) async {
+      final gate = Completer<bool>();
+      final enabled = ValueNotifier<bool>(true);
+      addTearDown(enabled.dispose);
+
+      await tester.pumpWidget(
+        _SwitchableNodeHost(
+          enabled: enabled,
+          onPop: (context, result) => gate.future,
+        ),
+      );
+      await tester.tap(find.text('go'));
+      await tester.pumpAndSettle();
+
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+
+      enabled.value = false;
+      await tester.pump();
+
+      gate.complete(true);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('go'),
+        findsNothing,
+        reason: 'the route stayed: the node that was asked about it is no '
+            'longer standing there',
+      );
+      expect(find.text('node content'), findsOneWidget);
+    });
+
+    // A `Navigator` of the application's own, deeper than the node's, announces
+    // that it can handle a pop -- and the node's navigator knows nothing about
+    // it. The node handed the press to its own navigator all the same, which
+    // had nothing of its own to give up and said so into a future nobody read:
+    // the press reached neither the hook nor the route above, and vanished.
+    testWidgets('a press nobody below took is still the node to answer', (
+      tester,
+    ) async {
+      var asked = 0;
+
+      await tester.pumpWidget(
+        _InnerNavigatorHost(
+          onPop: (context, result) {
+            asked++;
+
+            return true;
+          },
+        ),
+      );
+      await tester.tap(find.text('go'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('deeper please'));
+      await tester.pumpAndSettle();
+      expect(find.text('deeper'), findsOneWidget);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      expect(
+        asked,
+        1,
+        reason: 'nothing below took the press, so it is the node that answers '
+            'for it',
+      );
+      expect(
+        find.text('go'),
+        findsOneWidget,
+        reason: 'and the route the node stands on went, the way it would have '
+            'gone with no node there at all',
+      );
+    });
   });
 }
 
@@ -1947,6 +2227,133 @@ final class _RebuildableNodeHostState extends State<_RebuildableNodeHost> {
             child: _other
                 ? const Scaffold(body: Center(child: Text('the other child')))
                 : const Scaffold(body: Center(child: Text('the first child'))),
+          ),
+        ),
+      );
+}
+
+/// A plain `Navigator` inside the node — one the node's own navigator knows
+/// nothing about, and which announces that it can handle a pop as soon as it
+/// has a route of its own to give up.
+final class _InnerNavigatorHost extends StatelessWidget {
+  final FutureOr<bool> Function(BuildContext context, Object? result)? onPop;
+
+  const _InnerNavigatorHost({this.onPop});
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => unawaited(
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (context) => NavigationNode(
+                        onPop: onPop,
+                        child: const _InnerNavigator(),
+                      ),
+                    ),
+                  ),
+                ),
+                child: const Text('go'),
+              ),
+            ),
+          ),
+        ),
+      );
+}
+
+final class _InnerNavigator extends StatelessWidget {
+  const _InnerNavigator();
+
+  @override
+  Widget build(BuildContext context) => Navigator(
+        onGenerateRoute: (settings) => MaterialPageRoute<void>(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: TextButton(
+                onPressed: () => unawaited(
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (context) => const Scaffold(
+                        body: Center(child: Text('deeper')),
+                      ),
+                    ),
+                  ),
+                ),
+                child: const Text('deeper please'),
+              ),
+            ),
+          ),
+        ),
+      );
+}
+
+/// Listens for what a node lets past it, from just above the node.
+///
+/// The route the node stands on announces what it holds from its own subtree
+/// context, which is above this listener — so what is heard here came from the
+/// node and from nowhere else.
+final class _NotificationHost extends StatelessWidget {
+  final bool enabled;
+  final GlobalKey<NodeNavigatorState> navigatorKey;
+  final List<bool> heard;
+
+  const _NotificationHost({
+    required this.enabled,
+    required this.navigatorKey,
+    required this.heard,
+  });
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        home: NotificationListener<NavigationNotification>(
+          onNotification: (notification) {
+            heard.add(notification.canHandlePop);
+
+            return false;
+          },
+          child: NavigationNode(
+            enabled: enabled,
+            navigatorKey: navigatorKey,
+            child: const _OnPopNodeContent(),
+          ),
+        ),
+      );
+}
+
+/// A node on a pushed route, whose `enabled` the test can switch while the node
+/// is still deciding about a press.
+final class _SwitchableNodeHost extends StatelessWidget {
+  final ValueListenable<bool> enabled;
+  final FutureOr<bool> Function(BuildContext context, Object? result)? onPop;
+
+  const _SwitchableNodeHost({required this.enabled, this.onPop});
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => unawaited(
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (context) => ValueListenableBuilder<bool>(
+                        valueListenable: enabled,
+                        builder: (context, enabled, child) => NavigationNode(
+                          enabled: enabled,
+                          onPop: onPop,
+                          child: const _OnPopNodeContent(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                child: const Text('go'),
+              ),
+            ),
           ),
         ),
       );

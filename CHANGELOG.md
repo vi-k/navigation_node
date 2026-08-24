@@ -1,11 +1,50 @@
 ## 0.1.1
 
+* Fix `popUntil` never finishing inside a node. `NavigatorState.popUntil` pops
+  and then looks at what is left on top, over and over until its predicate
+  matches — and a pop that reaches the node's own page takes nothing, since a
+  node never empties itself. A predicate matching nothing inside the node
+  therefore left that loop looking at the same route for ever, in the frame it
+  was called from, with the application stopped. The walk now ends on the node's
+  own page.
+* Fix a back press vanishing when something below the node announced that it
+  could handle a pop and then did not. A `Navigator` or `Router` of your own,
+  deeper than the node's, is heard by the node exactly as the node's own
+  navigator is, while the only navigator a node can hand a press to is its own —
+  which had nothing to give up and said so into a future nobody read. The press
+  reached neither `onPop` nor the route above and simply disappeared, where with
+  no node there at all it would have closed the route. A press nothing below
+  took is now the node's to answer, as it always should have been.
+* Fix a disabled node still telling the framework that the back gesture is
+  handled. What its own subtree announced went past it and reached
+  `WidgetsApp`, which passes it to the platform — so a hidden tab of an
+  `IndexedStack` suppressed the predictive back gesture for a stack nobody could
+  see and the node had promised not to touch. A node with no place on the route
+  now keeps that news to itself, and goes on hearing it for the moment it is
+  switched back on.
+* Fix an answer from an asynchronous `onPop` still taking the route after the
+  node was switched off. Confirming a dialog after switching tabs took the route
+  the node had already given up its place on. Such an answer now takes nothing,
+  the way an answer arriving under a newer route does.
+* Report a failure from a synchronous `onPop`, from the guard read on the way
+  out of the node, and from the pop handed to the navigator above — the three
+  places where the promise in `README.md` was wider than the code. A synchronous
+  raise used to travel out through the loop a route runs over its entries,
+  taking any `PopScope` of yours beside the node with it; a raise in the
+  handover was left in a future nobody held. All of them are reported through
+  `FlutterError.reportError` now, and the press is simply not acted on.
+* Correct what the documentation says about `Navigator.pop()`. It never reaches
+  `onPop` from a route *inside* the node, which is what was meant — but on the
+  node's first page there is no such route to take, and the pop leaves the node
+  by asking the navigator above, whose route the node is a `PopEntry` of. The
+  hook is reached there, and now it says so. `README.md` also grew a section on
+  what a node does not do: named routes, `Hero` animations and where `popUntil`
+  stops.
 * Fix an error reported from a node naming the wrong library. Anything that
   falls over while an asynchronous `onPop` is being answered — the question
   itself, a confirmation dialog, the guard on the route — is reported through
   `FlutterError.reportError`, and the report said it came from `scopo`. It says
-  `navigation_node` now. Nothing else changed: the same failures are reported
-  at the same moments, and a press that raised is still simply not acted on.
+  `navigation_node` now, wherever a report comes from.
 
 ## 0.1.0
 
