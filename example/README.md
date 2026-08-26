@@ -1,6 +1,6 @@
 # navigation_node
 
-`NavigationNode` in nine lessons, with a system back you can press on a desktop.
+`NavigationNode` in ten lessons, with a system back you can press on a desktop.
 
 ```sh
 cd example
@@ -73,6 +73,11 @@ the press, which on a phone is the moment the app closes.
 9. **Observers see inside** — what the application already watches with hears
    the node without being given to it. `observedFromAbove` turns that off,
    and an observer named on the node itself goes on hearing.
+10. **What survives a restart** — `restorationScopeId` has the node write its
+    history down, and a restorable push comes back where an ordinary one does
+    not. macOS keeps nothing and kills nothing, so the lesson keeps the data
+    itself and hands it back on a button: the road the bytes take in is the
+    real one, the dying is pretended.
 
 ## What to read while you press
 

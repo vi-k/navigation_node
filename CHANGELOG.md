@@ -15,11 +15,13 @@
   IDE showed what `NavigatorState` says about them — which for a node is untrue:
   its `popUntil` stops on the node's own page, and `pop` on that page leaves the
   node instead of taking it.
-* The example gained three lessons, for the three things it did not show: one
+* The example gained four lessons, for the four things it did not show: one
   node per tab and what `enabled` is for, a name pushed inside a node, and the
   observers of an application hearing what a node does. Nine lessons now, and
   the tab one is the lesson to read first — it is the only shape where a node
-  changes an application's behaviour without being asked to.
+  changes an application's behaviour without being asked to. The tenth shows
+  restoration on a desktop, where the platform provides none: it keeps the
+  blob itself and hands it back the way the engine would.
 * `README.md` is rearranged around the reader rather than the widget. It opens
   with what a node is for, shows the tree with and without one, and then shows
   the code that uses it — including `useRootNavigator: false`, which used to be

@@ -83,7 +83,7 @@ application by default, and a route built there is next to your screen rather
 than under it — which is the very thing a node exists to avoid.
 
 The [example](https://github.com/vi-k/navigation_node/tree/main/example) shows
-all of this running, in nine lessons, with a journal that says what answered
+all of this running, in ten lessons, with a journal that says what answered
 each back press.
 
 ## The parameters

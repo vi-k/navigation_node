@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'journal.dart';
 import 'lesson.dart';
+import 'lessons/l10_restoration.dart';
 import 'lessons/l1_why_a_node.dart';
 import 'lessons/l2_dialog_inside.dart';
 import 'lessons/l3_guarded_route.dart';
@@ -12,7 +13,7 @@ import 'lessons/l7_one_node_per_tab.dart';
 import 'lessons/l8_named_routes.dart';
 import 'lessons/l9_observers.dart';
 
-/// The nine lessons, in the order they build on each other.
+/// The ten lessons, in the order they build on each other.
 final lessons = <Lesson>[
   whyANodeLesson,
   dialogInsideLesson,
@@ -23,6 +24,7 @@ final lessons = <Lesson>[
   oneNodePerTabLesson,
   namedRoutesLesson,
   observersLesson,
+  restorationLesson,
 ];
 
 void main() => runApp(const NavigationNodeApp());

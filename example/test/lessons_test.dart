@@ -393,4 +393,44 @@ void main() {
       reason: 'and observedFromAbove: false is what stops the rest',
     );
   });
+  testWidgets('lesson 10: only the restorable push comes back', (tester) async {
+    await openLesson(tester, lessons[9].title);
+
+    await tester.tap(find.text('Push restorably'));
+    await tester.pumpAndSettle();
+    expect(find.text('Pushed restorably'), findsOneWidget);
+
+    await tester.tap(find.text('Kill and bring it back'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Pushed restorably'),
+      findsOneWidget,
+      reason: 'the page was written down and built again from what was kept',
+    );
+  });
+
+  testWidgets('lesson 10: an ordinary push is not written down anywhere',
+      (tester) async {
+    await openLesson(tester, lessons[9].title);
+
+    await tester.tap(find.text('Push the ordinary way'));
+    await tester.pumpAndSettle();
+    expect(find.text('Pushed the ordinary way'), findsOneWidget);
+
+    await tester.tap(find.text('Kill and bring it back'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Pushed the ordinary way'),
+      findsNothing,
+      reason: 'a closure cannot be written down, so there was nothing to '
+          'build again — the framework says so, not the node',
+    );
+    expect(
+      find.text('first page of the node'),
+      findsOneWidget,
+      reason: 'and the node is where a fresh start would leave it',
+    );
+  });
 }
