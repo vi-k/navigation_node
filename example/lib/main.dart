@@ -8,8 +8,11 @@ import 'lessons/l3_guarded_route.dart';
 import 'lessons/l4_on_pop.dart';
 import 'lessons/l5_root_node.dart';
 import 'lessons/l6_nested_nodes.dart';
+import 'lessons/l7_one_node_per_tab.dart';
+import 'lessons/l8_named_routes.dart';
+import 'lessons/l9_observers.dart';
 
-/// The six lessons, in the order they build on each other.
+/// The nine lessons, in the order they build on each other.
 final lessons = <Lesson>[
   whyANodeLesson,
   dialogInsideLesson,
@@ -17,6 +20,9 @@ final lessons = <Lesson>[
   onPopLesson,
   rootNodeLesson,
   nestedNodesLesson,
+  oneNodePerTabLesson,
+  namedRoutesLesson,
+  observersLesson,
 ];
 
 void main() => runApp(const NavigationNodeApp());
@@ -33,6 +39,15 @@ class NavigationNodeApp extends StatefulWidget {
 class _NavigationNodeAppState extends State<NavigationNodeApp> {
   final _journal = Journal();
 
+  /// An observer of the application, of the kind an application already has.
+  ///
+  /// Lesson 9 is about this one: it watches the navigator of the application
+  /// and hears what a node pushes without being given to any node.
+  late final _observer = JournalNavigatorObserver(
+    _journal,
+    'the observer of the application',
+  );
+
   @override
   void dispose() {
     _journal.dispose();
@@ -47,6 +62,14 @@ class _NavigationNodeAppState extends State<NavigationNodeApp> {
         child: MaterialApp(
           title: 'NavigationNode',
           debugShowCheckedModeBanner: false,
+          navigatorObservers: [_observer],
+          // One route table, declared in the one place there is to declare it.
+          // A node borrows it, so lesson 8 can push this name from inside.
+          routes: {
+            detailsRouteName: (context) => const SamplePage(
+                  title: 'Built from the route table',
+                ),
+          },
           theme: ThemeData(
             colorSchemeSeed: Colors.indigo,
             useMaterial3: true,

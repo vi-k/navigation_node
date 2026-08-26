@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:navigation_node/navigation_node.dart';
+import 'package:navigation_node_example/journal.dart';
 import 'package:navigation_node_example/main.dart';
 import 'package:navigation_node_example/system_back.dart';
 
@@ -271,6 +272,125 @@ void main() {
       find.text(lessons[5].title),
       findsWidgets,
       reason: 'neither back left the lesson',
+    );
+  });
+  testWidgets('lesson 7: only the visible tab answers the back',
+      (tester) async {
+    await openLesson(tester, lessons[6].title);
+
+    await tester.tap(find.text('Push a page in tab A'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Tab B'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Push a page in tab B'));
+    await tester.pumpAndSettle();
+
+    await pressSystemBackButton(tester);
+    expect(find.text('Pushed in tab B'), findsNothing);
+
+    await tester.tap(find.text('Tab A'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Pushed in tab A'),
+      findsOneWidget,
+      reason: 'the hidden tab is disabled, so it took no part in the press',
+    );
+  });
+
+  testWidgets('lesson 7: without enabled every tab answers it', (tester) async {
+    await openLesson(tester, lessons[6].title);
+
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Push a page in tab A'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Tab B'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Push a page in tab B'));
+    await tester.pumpAndSettle();
+
+    await pressSystemBackButton(tester);
+
+    await tester.tap(find.text('Tab A'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Pushed in tab A'),
+      findsNothing,
+      reason: 'every node on the route was asked and called back, so the tab '
+          'nobody was looking at lost a page too',
+    );
+  });
+
+  testWidgets('lesson 8: the same name lands under the screen only inside',
+      (tester) async {
+    await openLesson(tester, lessons[7].title);
+
+    await tester.tap(find.text('pushNamed inside the node'));
+    await tester.pumpAndSettle();
+    expect(find.text('Built from the route table'), findsOneWidget);
+    expect(
+      find.textContaining('ticket N-7'),
+      findsWidgets,
+      reason: 'the node borrowed the table and built the name below itself',
+    );
+
+    await pressSystemBackButton(tester);
+    await tester.tap(find.text('pushNamed on the application'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('out of reach'),
+      findsOneWidget,
+      reason: 'the same name on the navigator above lands above the screen',
+    );
+  });
+
+  testWidgets('lesson 9: the application hears the node until told not to',
+      (tester) async {
+    await openLesson(tester, lessons[8].title);
+
+    final journal = JournalScope.of(
+      tester.element(find.byType(MaterialApp)),
+      listen: false,
+    );
+
+    await tester.tap(find.text('Push a page inside the node'));
+    await tester.pumpAndSettle();
+
+    expect(
+      journal.entries.map((entry) => entry.message),
+      containsAll([
+        'the observer of the application heard: pushed "observed page"',
+        'the observer given to the node heard: pushed "observed page"',
+      ]),
+    );
+
+    await pressSystemBackButton(tester);
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pumpAndSettle();
+    journal.clear();
+    await tester.pump();
+
+    await tester.tap(find.text('Push a page inside the node'));
+    await tester.pumpAndSettle();
+
+    final heard = journal.entries.map((entry) => entry.message).toList();
+    expect(
+      heard,
+      contains('the observer given to the node heard: pushed "observed page"'),
+      reason: 'what the node was given hears it whatever the switch says',
+    );
+    expect(
+      heard,
+      isNot(
+        contains(
+          'the observer of the application heard: pushed "observed page"',
+        ),
+      ),
+      reason: 'and observedFromAbove: false is what stops the rest',
     );
   });
 }

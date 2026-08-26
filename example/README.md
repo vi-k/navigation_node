@@ -1,6 +1,6 @@
 # navigation_node
 
-`NavigationNode` in six lessons, with a system back you can press on a desktop.
+`NavigationNode` in nine lessons, with a system back you can press on a desktop.
 
 ```sh
 cd example
@@ -62,6 +62,17 @@ the press, which on a phone is the moment the app closes.
    say so before you press anything: one has a back arrow, the other has none.
 6. **Nodes inside nodes** — a back passes down until it reaches the innermost
    node that has something to close. Everything above stays put.
+7. **One node per tab** — an `IndexedStack` puts a node per tab on one route,
+   and the route asks every one of them. `enabled` says which is the tab on
+   screen; the switch turns it off, so you can watch the hidden tab quietly
+   lose a page.
+8. **Names work inside** — a node borrows the route table of the navigator
+   above, so `pushNamed` from inside builds the same name below the node. The
+   same name on the application lands above the screen, and the two pages say
+   which of the two happened.
+9. **Observers see inside** — what the application already watches with hears
+   the node without being given to it. `observedFromAbove` turns that off,
+   and an observer named on the node itself goes on hearing.
 
 ## What to read while you press
 

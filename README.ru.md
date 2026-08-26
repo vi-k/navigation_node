@@ -1,6 +1,6 @@
 # navigation_node
 
-> Перевод `README.md` (blob `2bcaaddb9724e9e3fa88f5450ff2d26b4ecaeba3`).
+> Перевод `README.md` (blob `7428ba781088661cc19e5af2eaddaaa25ca1a8dd`).
 > Правится в том же коммите, что и оригинал; проверка — `sh docs/ru/check.sh`.
 
 [![pub version](https://img.shields.io/pub/v/navigation_node)](https://pub.dev/packages/navigation_node)
@@ -87,7 +87,7 @@ Navigator.of(context).push(
 ровно то, ради чего узел и заводят.
 
 В [примере](https://github.com/vi-k/navigation_node/tree/main/example) всё это
-работает, шестью уроками, с журналом, который показывает, что ответило на
+работает, девятью уроками, с журналом, который показывает, что ответило на
 каждое нажатие «назад».
 
 ## Параметры
