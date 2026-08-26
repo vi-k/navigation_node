@@ -4,18 +4,24 @@
 # everything that must stay out of the package is listed here, not only the
 # paths that git also ignores.
 
-# The suite: 58 KB against the 26 KB of `lib/`, downloaded by everyone who
+# The suite: 108 KB against the 52 KB of `lib/`, downloaded by everyone who
 # depends on the package and of no use to any of them. It stays in the
 # repository, where it can be read and run.
 /test/
 
 # The repository's own process, not the package: the regimen the agents read,
-# the state they keep, the Russian mirrors of the public pages, and CI.
+# the state they keep, the mirror scripts, and CI.
 /docs/
 /AGENTS.md
 /CLAUDE.md
 /.github/
 /.vscode/
+
+# The Russian mirrors of the two public pages. They live beside the originals,
+# so that a reader finds one where the other is; pub.dev renders `README.md`
+# and `example/README.md` and has no use for either translation.
+/README.ru.md
+/example/README.ru.md
 
 # Platform folders of the example: `flutter create .` regenerates them, and a
 # reader of an example needs its Dart.

@@ -13,20 +13,36 @@ cd "$(dirname "$0")/../.."
 status=0
 checked=0
 
-# 1. У каждого перевода — свежий хеш оригинала.
-#
-# `docs/ru/example/README.md` перечислен отдельно: шаблон `example/*/README.md`
-# его не покрывает, а это страница вкладки Example на pub.dev. Пока её здесь не
-# было, оригинал разъехался с кодом и гейт молчал.
-for translation in docs/ru/README.md docs/ru/example/README.md; do
-  [ -e "$translation" ] || continue
+# Пары «оригинал → перевод». Каждое зеркало лежит рядом со своим оригиналом:
+# читатель находит его там же, где английский, а не в отдельном дереве.
+# `example/README.md` перечислен поимённо, а не шаблоном: это страница вкладки
+# Example на pub.dev, и пока её здесь не было, оригинал разъехался с кодом, а
+# гейт молчал.
+pairs='README.md:README.ru.md example/README.md:example/README.ru.md'
 
-  source=$(sed -n 's/^> Перевод `\([^`]*\)`.*/\1/p' "$translation" | head -1)
+for pair in $pairs; do
+  source=${pair%%:*}
+  translation=${pair#*:}
+
+  if [ ! -e "$translation" ]; then
+    echo "НЕТ ПЕРЕВОДА: $source (ждали $translation)"
+    status=1
+    continue
+  fi
+
+  recorded_source=$(sed -n 's/^> Перевод `\([^`]*\)`.*/\1/p' "$translation" | head -1)
   recorded=$(sed -n 's/^.*blob `\([0-9a-f]\{40\}\)`.*/\1/p' "$translation" | head -1)
 
-  if [ -z "$source" ] || [ -z "$recorded" ]; then
+  if [ -z "$recorded_source" ] || [ -z "$recorded" ]; then
     echo "НЕТ ШАПКИ: $translation — первой строкой нужен"
     echo '              > Перевод `<оригинал>` (blob `<40 hex>`).'
+    status=1
+    continue
+  fi
+
+  if [ "$recorded_source" != "$source" ]; then
+    echo "ЧУЖАЯ ШАПКА: $translation называет оригиналом $recorded_source,"
+    echo "             а зеркалит $source"
     status=1
     continue
   fi
@@ -44,15 +60,6 @@ for translation in docs/ru/README.md docs/ru/example/README.md; do
     echo "УСТАРЕЛ: $translation"
     echo "         оригинал $source сейчас $actual,"
     echo "         в шапке записан         $recorded"
-    status=1
-  fi
-done
-
-# 2. У каждого оригинала — зеркало.
-for source in README.md example/README.md; do
-  translation="docs/ru/$source"
-  if [ ! -e "$translation" ]; then
-    echo "НЕТ ПЕРЕВОДА: $source (ждали $translation)"
     status=1
   fi
 done
