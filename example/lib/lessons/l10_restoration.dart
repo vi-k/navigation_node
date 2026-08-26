@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:navigation_node/navigation_node.dart';
 
@@ -94,18 +95,43 @@ class _StageState extends State<_Stage> {
   @override
   void initState() {
     super.initState();
-    _manager
-      ..begin()
-      ..addListener(_takeTheNewBucket);
-    _takeTheNewBucket();
+    _manager.addListener(_takeTheNewBucket);
+
+    // Started after this build rather than inside it. Once the manager has
+    // been started its bucket arrives *synchronously* -- `rootBucket` is a
+    // `SynchronousFuture` from then on -- so starting it here would have this
+    // widget call `setState` in the middle of its own build.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _manager.begin();
+      }
+    });
   }
 
   void _takeTheNewBucket() {
     unawaited(
       _manager.rootBucket.then((bucket) {
-        if (mounted) {
-          setState(() => _bucket = bucket);
+        if (!mounted || identical(bucket, _bucket)) {
+          return;
         }
+
+        // The same care again, for the same reason: this can be reached from
+        // inside a build -- a hot reload rebuilds everything and the timers of
+        // an application go on running through it -- and `setState` there is an
+        // error the framework reports and then trips over, one frame after
+        // another.
+        if (SchedulerBinding.instance.schedulerPhase ==
+            SchedulerPhase.persistentCallbacks) {
+          SchedulerBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() => _bucket = bucket);
+            }
+          });
+
+          return;
+        }
+
+        setState(() => _bucket = bucket);
       }),
     );
   }
