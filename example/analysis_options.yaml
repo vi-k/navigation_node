@@ -1,5 +1,14 @@
 # The package's own strict config, one level up: an example is code the reader
 # copies, so it answers to the same rules as `lib/`.
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
 include: ../analysis_options.yaml
 
 linter:

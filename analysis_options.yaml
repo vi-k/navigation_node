@@ -15,12 +15,13 @@ include: package:flutter_lints/flutter.yaml
 
 analyzer:
   exclude:
-    # Web
-    "web/**": true
-    # Build
-    "build/**": true
-    # Assets
-    "assets/**": true
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
 
   language:
     strict-casts: true
