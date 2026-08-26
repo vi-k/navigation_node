@@ -1,3 +1,10 @@
+// `unreachable_from_main` counts a library with a `vm:entry-point` in it as one
+// with an entry point of its own, and then finds everything else in the file
+// unreachable from it. What is here is reached from `main.dart` like any other
+// lesson; the annotation below is a requirement of the framework, not a second
+// way in.
+// ignore_for_file: unreachable_from_main
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -14,6 +21,12 @@ import '../lesson.dart';
 /// to the builder rather than the closure at the call site, and that is the
 /// whole reason it can be built again after the application is gone. An
 /// ordinary `push` takes a closure, which cannot be written down at all.
+///
+/// The annotation is not decoration: the navigator asks for this function *by
+/// name* when it builds the route again, and the name has to survive the
+/// compiler for that. Without it the application starts, pushes, and falls over
+/// on the way back -- «To closurize … from native code, it must be annotated».
+@pragma('vm:entry-point')
 Route<void> _restorableDetails(BuildContext context, Object? arguments) =>
     MaterialPageRoute<void>(
       settings: const RouteSettings(name: 'restorable page'),

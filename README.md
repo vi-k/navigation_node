@@ -169,7 +169,11 @@ NavigationNode(
 What comes back is what Flutter can build again without the code that pushed
 it: `restorablePush` and its neighbours, which keep a reference to a static
 builder rather than a closure. An ordinary `push` is never restored — that is
-the framework's rule and not the node's. `restorablePushNamed` works from
+the framework's rule and not the node's. The builder that is kept must be a
+top-level or static function annotated with `@pragma('vm:entry-point')`: the
+navigator asks for it *by name* when it builds the route again, and the name has
+to survive the compiler for that. A test finds it without the annotation and an
+application does not, so it is an easy thing to ship broken. `restorablePushNamed` works from
 inside a node like any other name, and the route table it needs is borrowed
 from the navigator above when the name is built anew.
 

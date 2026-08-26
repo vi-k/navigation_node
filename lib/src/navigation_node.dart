@@ -202,7 +202,11 @@ final class NavigationNode extends StatefulWidget {
   /// pushed it: `restorablePush` and its neighbours, which keep a reference to
   /// a static builder and arguments that survive being written down. An
   /// ordinary `push` carries a closure and is never restored — that is the
-  /// framework's rule and not the node's. `restorablePushNamed` works from
+  /// framework's rule and not the node's. The builder must be a top-level or
+  /// static function annotated with `@pragma('vm:entry-point')`, since the
+  /// navigator asks for it by name when it builds the route anew; without the
+  /// annotation a test still passes and an application fails at the moment of
+  /// restoring, with «To closurize … from native code, it must be annotated». `restorablePushNamed` works from
   /// inside a node like any other name: the route table is borrowed from the
   /// navigator above, and it is borrowed again when the name is built anew.
   ///

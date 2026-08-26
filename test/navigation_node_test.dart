@@ -3364,6 +3364,11 @@ final class _Thrower extends NavigatorObserver {
 /// A top-level function on purpose: a restorable push keeps the *reference* to
 /// the builder, not a closure, which is what lets it be built again after the
 /// application has been killed.
+///
+/// Annotated because the framework asks for this function *by name* when it
+/// builds the route anew, and the name has to survive the compiler for that.
+/// A test VM finds it either way; an application does not, and says so.
+@pragma('vm:entry-point')
 Route<void> _restorableDetails(BuildContext context, Object? arguments) =>
     MaterialPageRoute<void>(
       builder: (context) =>
