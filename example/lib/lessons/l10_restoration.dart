@@ -66,12 +66,13 @@ class PocketRestorationManager extends RestorationManager {
     saved = encodedData;
   }
 
-  /// Starts with nothing kept, the way a first launch does.
-  void begin() => handleRestorationUpdateFromEngine(enabled: true, data: null);
-
-  /// Hands [data] back the way the engine does after a restart.
-  void bringBack(Uint8List? data) =>
-      handleRestorationUpdateFromEngine(enabled: true, data: data);
+  /// Starts with [kept] — nothing on a first launch, and what the system held
+  /// on to when the application is coming back from being killed.
+  ///
+  /// This is the call the engine makes on a real device, with the bytes the
+  /// platform kept, and it is the whole of the road back.
+  void begin({Uint8List? kept}) =>
+      handleRestorationUpdateFromEngine(enabled: true, data: kept);
 }
 
 class _Stage extends StatefulWidget {
@@ -82,8 +83,11 @@ class _Stage extends StatefulWidget {
 }
 
 class _StageState extends State<_Stage> {
-  final _manager = PocketRestorationManager();
-  final _navigatorKey = GlobalKey<NodeNavigatorState>();
+  var _manager = PocketRestorationManager();
+
+  /// Counts the lives of the node: a new one is a new tree, from the navigator
+  /// down, which is what makes the pretence worth anything.
+  var _life = 0;
 
   RestorationBucket? _bucket;
 
@@ -117,19 +121,29 @@ class _StageState extends State<_Stage> {
   void _killAndBringBack() {
     final journal = JournalScope.of(context, listen: false);
 
-    // Taken before the stack is unwound, which is the order that reads
-    // correctly rather than the order that is required: serialisation is
-    // deferred to a post-frame callback, so reading it after the pops would in
-    // fact give the same bytes -- until something makes a frame in between.
-    final snapshot = _manager.saved;
-    journal.log('kept ${snapshot?.length ?? 0} bytes, as a kill would');
+    // What the system would have held on to, taken while the application is
+    // still alive -- which is when it is taken on a device as well.
+    final kept = _manager.saved;
+    journal.log('kept ${kept?.length ?? 0} bytes, as a kill would');
 
-    // Back to the node's own page, which is where a fresh start would leave
-    // it. `popUntil` stops there by itself — a node never empties itself.
-    _navigatorKey.currentState?.popUntil((route) => false);
+    final dead = _manager..removeListener(_takeTheNewBucket);
 
-    _manager.bringBack(snapshot);
-    journal.logNode('handed the bytes back the way a restart does');
+    setState(() {
+      // Everything below goes: the node, its navigator, the routes on it. That
+      // is the part a pretended kill has to get right. Unwinding the stack of a
+      // living navigator instead is a different thing entirely -- pressing this
+      // during a transition took the navigator apart underneath the route that
+      // was still arriving, and the framework said so.
+      _life++;
+      _bucket = null;
+      _manager = PocketRestorationManager()
+        ..begin(kept: kept)
+        ..addListener(_takeTheNewBucket);
+    });
+
+    dead.dispose();
+    _takeTheNewBucket();
+    journal.logNode('started again with the bytes, the way a device does');
   }
 
   @override
@@ -156,11 +170,11 @@ class _StageState extends State<_Stage> {
                 // `MaterialApp.restorationScopeId` installs reads the manager
                 // of the binding, and would never see this one.
                 : UnmanagedRestorationScope(
+                    key: ValueKey(_life),
                     bucket: bucket,
-                    child: NavigationNode(
-                      navigatorKey: _navigatorKey,
+                    child: const NavigationNode(
                       restorationScopeId: 'lesson',
-                      child: const _NodeHome(),
+                      child: _NodeHome(),
                     ),
                   ),
           ),

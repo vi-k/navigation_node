@@ -410,6 +410,29 @@ void main() {
     );
   });
 
+  // Pressing the button while the pushed route was still arriving used to take
+  // the navigator apart underneath it: the lesson unwound a living stack and
+  // handed it new data in the same breath. A kill is not like that -- it takes
+  // the whole tree -- and the lesson does that now instead.
+  testWidgets('lesson 10: the button is safe while a route is still arriving',
+      (tester) async {
+    await openLesson(tester, lessons[9].title);
+
+    await tester.tap(find.text('Push restorably'));
+    await tester.pump(const Duration(milliseconds: 40));
+
+    await tester.tap(find.text('Kill and bring it back'));
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(
+      find.byType(NavigationNode),
+      findsOneWidget,
+      reason: 'the node came back to life rather than falling over',
+    );
+  });
+
   testWidgets('lesson 10: an ordinary push is not written down anywhere',
       (tester) async {
     await openLesson(tester, lessons[9].title);
