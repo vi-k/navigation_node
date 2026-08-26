@@ -1,3 +1,19 @@
+## 0.2.1
+
+* Documentation only; nothing about the package behaves differently.
+* `NodeNavigatorState.pop`, `maybePop` and `popUntil` are documented. They were
+  overridden without a doc comment, so the API reference and the tooltip of an
+  IDE showed what `NavigatorState` says about them — which for a node is untrue:
+  its `popUntil` stops on the node's own page, and `pop` on that page leaves the
+  node instead of taking it.
+* `README.md` is rearranged around the reader rather than the widget. It opens
+  with what a node is for, shows the tree with and without one, and then shows
+  the code that uses it — including `useRootNavigator: false`, which used to be
+  a clause in the middle of a paragraph about something else. The parameters are
+  listed in one table, and what used to be a single 140-line section is now four
+  named ones. What it stopped repeating is the part the API reference already
+  said better.
+
 ## 0.2.0
 
 * Observers reach the navigation inside a node.

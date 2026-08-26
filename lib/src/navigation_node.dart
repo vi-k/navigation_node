@@ -3,11 +3,14 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-/// Navigation node.
+/// A nested `Navigator` that keeps what it opens inside the screen it stands on.
 ///
-/// A widget that creates a nested `Navigator`. It allows you to include bottom
-/// sheets, dialogs, and other screens in the current scope, ensuring they have
-/// access to all components located above them in the widget tree.
+/// A dialog, a bottom sheet or a pushed route opened through a node is built
+/// below the node rather than above the whole application, so everything the
+/// screen put over its own subtree is still among that route's ancestors. The
+/// other half of the widget is the system back: a node is a [PopEntry] of the
+/// route it stands on, so back closes what the node has open before it touches
+/// the route around it. Named routes work inside a node and land inside it.
 final class NavigationNode extends StatefulWidget {
   /// Whether this node is the outermost one.
   ///
@@ -56,6 +59,13 @@ final class NavigationNode extends StatefulWidget {
   /// route the node sits on has been closed by something else, or buried under
   /// a newer one, a `true` takes nothing, since a pop would otherwise take
   /// whatever is on top instead of what was asked about.
+  ///
+  /// Anything that falls over on the way — the hook itself, or a guard the
+  /// application put on the route, which is read when the node asks what a pop
+  /// there would do — is reported through `FlutterError.reportError` rather
+  /// than left in a chain nobody holds, where it would surface as an unhandled
+  /// zone error far from the widget that caused it. The press is simply not
+  /// acted on, and the next one is asked as usual.
   ///
   /// On a root node the hook is asked as it is anywhere else, but `true` takes
   /// nothing there either: [isRoot] says the node keeps a pop to itself, and
@@ -131,7 +141,29 @@ final class NavigationNode extends StatefulWidget {
   ///
   /// A node inside a node inherits the audience of the navigator above it, and
   /// this list is part of that audience — so what is named here hears the nodes
-  /// inside this one as well.
+  /// inside this one as well. The chain is made of nodes and nothing else: a
+  /// plain nested `Navigator` between a node and the application has no proxy
+  /// to pass anything on with.
+  ///
+  /// The page a node builds for itself is announced to nobody when the node
+  /// mounts. It stands for the route the node stands on, which the navigator
+  /// above has announced already, and announcing it again would give an
+  /// application two screens where it has one, the second of them nameless.
+  /// Everything after that is passed on as it is, the events that name that
+  /// page as their previous route included — which is what tells a `RouteAware`
+  /// on the node's first page that something has covered it, through a
+  /// `RouteObserver<PageRoute>` or wider, since the node builds a `PageRoute`
+  /// and not a `MaterialPageRoute`. The page becoming the topmost one again is
+  /// announced too, nameless as it is.
+  ///
+  /// Two things a node never says. It says nothing as it leaves the tree: a
+  /// node taken off screen with a stack still inside it disposes those routes
+  /// the way any nested navigator does, without a `didPop` or a `didRemove`
+  /// for any of them, so an observer that counts what is open closes its own
+  /// books when the route holding the node goes. And a `RouteAware` on the
+  /// node's first page hears that the node covered it, never that the
+  /// application did — the route it is subscribed to is the node's page, and
+  /// what the application pushes goes on another navigator entirely.
   final List<NavigatorObserver> observers;
 
   /// Whether the navigation inside this node reaches the observers of the
@@ -969,6 +1001,11 @@ final class NodeNavigatorState extends NavigatorState {
   // ignore: discarded_futures
   Future<bool> _popInside(Object? result) => super.maybePop(result);
 
+  /// Pops until the predicate matches, or until the node's own page.
+  ///
+  /// Unlike [NavigatorState.popUntil], the walk always ends on the page the
+  /// node starts with: a node never empties itself, so a predicate matching
+  /// nothing inside it stops there rather than leaving the node.
   @override
   void popUntil(RoutePredicate predicate) {
     // The walk ends on the node's own page, whatever the predicate says.
@@ -985,6 +1022,12 @@ final class NodeNavigatorState extends NavigatorState {
     super.popUntil((route) => route is _NodePageRoute || predicate(route));
   }
 
+  /// Pops the top route of this navigator, or leaves the node.
+  ///
+  /// Unlike [NavigatorState.pop], this never takes the page the node starts
+  /// with — a node does not empty itself. When there is nothing else left, an
+  /// ordinary node hands the pop to the navigator above it, as often as it is
+  /// asked, and a [NavigationNode.isRoot] one keeps it and does nothing.
   @override
   void pop<T extends Object?>([T? result]) {
     if (canPop()) {
@@ -1024,6 +1067,13 @@ final class NodeNavigatorState extends NavigatorState {
     );
   }
 
+  /// Asks this navigator to pop, and asks the one above when it will not.
+  ///
+  /// Unlike [NavigatorState.maybePop], an answer of `false` from the node's own
+  /// stack is not the end: the way out of a node is the navigator above, and
+  /// that one is asked next — which is the path the back arrow of an `AppBar`
+  /// on the node's first page takes. A [NavigationNode.isRoot] node stops
+  /// there and answers `false`.
   @override
   Future<bool> maybePop<T extends Object?>([T? result]) async {
     if (await super.maybePop(result)) {
