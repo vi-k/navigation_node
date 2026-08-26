@@ -98,6 +98,64 @@ final class NavigationNode extends StatefulWidget {
   /// consulted, and an application resolves it the same way.
   final bool enabled;
 
+  /// The observers the node tells about the navigation inside it.
+  ///
+  /// A node hands its navigator one observer of its own and retells what it
+  /// hears — to everything in this list first, and then, while
+  /// [observedFromAbove], to the observers of the navigator above.
+  ///
+  /// Retelling rather than handing over is what makes the list work at all. A
+  /// `NavigatorObserver` belongs to one navigator and one only: the framework
+  /// writes the owner down when the navigator is built and asserts nothing was
+  /// there before, so the `RouteObserver` of an application — bound to the
+  /// navigator of the application — cannot be handed to a node as well.
+  /// Retelling binds nothing and unbinds nothing, and one instance can
+  /// therefore serve the navigator of the application and any number of nodes
+  /// at the same time.
+  ///
+  /// The price is that `NavigatorObserver.navigator` says nothing about the
+  /// node. It is `null` for an observer that is never anything but a delegate;
+  /// it is the navigator of the application for one the application declared;
+  /// and it is never the navigator whose navigation has just been retold. An
+  /// observer that reads it is asking about somewhere else — `HeroController`
+  /// is the framework's own, and it has no business in this list.
+  ///
+  /// An observer that already stands anywhere above does not belong here while
+  /// [observedFromAbove]: it would be told twice, and a `RouteObserver` would
+  /// wake its subscribers twice for one push. An assertion refuses that — the
+  /// nodes between are walked through, so a name repeated further up the chain
+  /// is refused as well — and it refuses one observer named twice in this list.
+  /// The assertion is read when the node builds, which is the one thing it
+  /// cannot promise about a list an application changes in place: such a
+  /// duplicate is delivered twice until something rebuilds the node.
+  ///
+  /// A node inside a node inherits the audience of the navigator above it, and
+  /// this list is part of that audience — so what is named here hears the nodes
+  /// inside this one as well.
+  final List<NavigatorObserver> observers;
+
+  /// Whether the navigation inside this node reaches the observers of the
+  /// navigator above it.
+  ///
+  /// `true` by default, so a `RouteObserver`, an analytics observer or a
+  /// logger the application has already declared sees what is pushed and
+  /// popped inside a node the way it sees the rest of the application. What is
+  /// inherited is the list that navigator was handed —
+  /// `MaterialApp.navigatorObservers`, or the `observers` of whatever
+  /// `Navigator` stands over the node.
+  ///
+  /// Nodes chain: for a node inside a node the navigator above is the outer
+  /// node's, whose observer is the outer node's own, and the events travel out
+  /// through it. This switch therefore cuts the chain where it is set `false`:
+  /// the nodes inside such a node stop reaching the application, whatever they
+  /// say for themselves. What they do not stop reaching is [observers] of that
+  /// same node — an inner node inherits the whole audience of the navigator
+  /// above, and the outer node's own list is part of it.
+  ///
+  /// Set it `false` for a node whose navigation is nobody else's business.
+  /// [observers] still says who hears it then.
+  final bool observedFromAbove;
+
   /// Creates a navigation node around [child].
   const NavigationNode({
     super.key,
@@ -105,6 +163,8 @@ final class NavigationNode extends StatefulWidget {
     this.isRoot = false,
     this.onPop,
     this.enabled = true,
+    this.observedFromAbove = true,
+    this.observers = const [],
     required this.child,
   });
 
@@ -134,6 +194,16 @@ final class _NavigationNodeState extends State<NavigationNode> {
   /// already written that way.
   NodeNavigatorState? get _navigator => _navigatorKey.currentState;
 
+  /// What the nested navigator is told to report to, kept rather than rebuilt.
+  ///
+  /// One observer, the node's own, and always the same instance: the framework
+  /// binds an observer to the navigator it was handed to, and
+  /// [NavigatorState.didUpdateWidget] compares this list by identity — a fresh
+  /// one on every build would unbind and rebind it every time. Nothing is lost
+  /// by keeping it, because [_NodeObserver] reads the list the node was given
+  /// at the moment it retells something rather than remembering it.
+  late final List<NavigatorObserver> _observers = [_NodeObserver(this)];
+
   /// The page list the nested navigator is handed, kept rather than rebuilt.
   ///
   /// [NavigatorState.didUpdateWidget] compares the list it was given by
@@ -160,6 +230,63 @@ final class _NavigationNodeState extends State<NavigationNode> {
     if (!identical(widget.child, oldWidget.child) ||
         widget.isRoot != oldWidget.isRoot) {
       _pages = _buildPages();
+    }
+  }
+
+  /// Whether nobody in the node's audience is named twice.
+  ///
+  /// Read by an assertion in [build] and nowhere else. Nothing in the framework
+  /// catches this for us: a `Navigator` refuses a repeated observer only
+  /// because it binds each one it is handed, and a delegate is bound to
+  /// nothing — which is the whole reason a node can retell to the observers of
+  /// the application at all.
+  bool _audienceIsDistinct(NavigatorState? above) {
+    final own = widget.observers;
+
+    for (var i = 0; i < own.length; i++) {
+      if (own.indexWhere((other) => identical(other, own[i]), i + 1) >= 0) {
+        return false;
+      }
+    }
+
+    if (!widget.observedFromAbove) {
+      return true;
+    }
+
+    return !_audienceAbove(above).any(
+      (inherited) => own.any((mine) => identical(mine, inherited)),
+    );
+  }
+
+  /// Everyone a node standing here retells to, apart from its own list.
+  ///
+  /// Not the same thing as the observers the navigator above declares. When
+  /// that navigator belongs to another node, what it declares is that node's
+  /// own proxy, and the audience behind the proxy is the outer node's
+  /// [NavigationNode.observers] and — while that node inherits in turn —
+  /// whatever stands above it. Walking through the proxies is what makes the
+  /// assertion in [build] mean what the documentation says it means: measured
+  /// against the declared list alone, a duplicate anywhere in a chain of nodes
+  /// went through without a word, which is exactly where it is hardest to spot
+  /// by reading. Read from an assertion, so this walk costs a release build
+  /// nothing.
+  Iterable<NavigatorObserver> _audienceAbove(NavigatorState? above) sync* {
+    if (above == null) {
+      return;
+    }
+
+    final navigator = above.widget;
+    if (navigator is! _NodeNavigator) {
+      yield* navigator.observers;
+
+      return;
+    }
+
+    final node = navigator.node;
+    yield* node.widget.observers;
+
+    if (node.widget.observedFromAbove && node.mounted) {
+      yield* node._audienceAbove(Navigator.maybeOf(node.context));
     }
   }
 
@@ -367,12 +494,25 @@ final class _NavigationNodeState extends State<NavigationNode> {
     // ([NavigatorState.restoreState]), and this page list never is.
     final above = Navigator.maybeOf(context);
 
+    assert(
+      _audienceIsDistinct(above),
+      'A NavigationNode was given an observer it is already telling. While '
+      '`observedFromAbove` is true a node retells everything to the observers '
+      'of the navigator above it, so naming one of those in `observers` as '
+      'well has it told twice -- a RouteObserver then wakes its subscribers '
+      'twice for one push, and a screen counter counts one screen as two. Take '
+      'it out of `observers`, or set `observedFromAbove: false` if this node '
+      'is to report to that list alone. The same goes for one observer named '
+      'twice in `observers` itself.',
+    );
+
     return _NodeBackDispatcher(
       node: this,
       child: _NodeNavigator(
         key: _navigatorKey,
         node: this,
         pages: _pages,
+        observers: _observers,
         onDidRemovePage: _onDidRemovePage,
         onGenerateRoute: above?.widget.onGenerateRoute,
         onUnknownRoute: above?.widget.onUnknownRoute,
@@ -600,6 +740,149 @@ final class _NodeCanPopOutside extends ChangeNotifier
   void notifyOfChange() => notifyListeners();
 }
 
+/// The one observer a node hands its own navigator.
+///
+/// A `NavigatorObserver` can be given to one navigator and no more —
+/// `NavigatorObserver.navigator` is read out of a static `Expando` the
+/// framework writes when a navigator is built, under an assertion that nothing
+/// was written there before. The observers of an application are bound to the
+/// navigator of the application already, so handing those same instances to a
+/// node is not a thing that can be done. This one belongs to the node; what it
+/// retells to is bound to nothing at all, which is what lets a single
+/// `RouteObserver` serve the application and every node in it at once.
+final class _NodeObserver extends NavigatorObserver {
+  final _NavigationNodeState _node;
+
+  _NodeObserver(this._node);
+
+  /// Whether [route] is the page the node builds for itself.
+  ///
+  /// That page stands for the route the node stands on, and the navigator
+  /// above announced that one already — saying it again would give an
+  /// application two screens where it has one, the second of them nameless.
+  /// What is kept quiet about is the page itself, never an event that merely
+  /// mentions it: a route pushed over it is announced with the page as its
+  /// previous route, and that is what tells a `RouteAware` on the node's first
+  /// page that something has covered it.
+  bool _isOwnPage(Route<dynamic> route) =>
+      identical(route.settings, _node._pages.single);
+
+  /// Retells one event, to the observers the node was given and then to the
+  /// ones it inherits.
+  ///
+  /// The navigator above is asked for here rather than remembered, the same way
+  /// the route table it lends is read on every build: what an application hands
+  /// its navigator is a list of its own, and a node that has been moved answers
+  /// about where it is standing now.
+  ///
+  /// Both lists are walked through a copy, because neither belongs to the node.
+  /// A delegate that takes itself off the list the moment it hears something is
+  /// an ordinary shape, and walking the list itself threw a
+  /// `ConcurrentModificationError` out of the middle of the navigator's flush —
+  /// which left that navigator's debug lock raised and every later push of this
+  /// node failing on an assertion, for the lifetime of the widget. Under a
+  /// `MaterialApp` the framework walks a copy without meaning to, since
+  /// `_effectiveObservers` is `widget.observers` with the hero controller added
+  /// to it, so the same delegate survives on the navigator of the application:
+  /// the difference would have been ours alone.
+  ///
+  /// A delegate that raises is reported and stepped over, which is a departure
+  /// from the framework — a `Navigator` lets an observer's failure out, and it
+  /// costs that navigator the rest of its flush and leaves its debug lock
+  /// raised. The node cannot afford that here, because the observer that
+  /// raises need not be anything to do with the node: an observer the
+  /// application declared for its own navigator would otherwise take the
+  /// navigator of every node it is retold to down with it, and take it down for
+  /// good. The rest of the audience is told, and the failure arrives with this
+  /// package named on it rather than disappearing.
+  void _tell(void Function(NavigatorObserver observer) event) {
+    _retell(_node.widget.observers, event);
+
+    if (!_node.widget.observedFromAbove) {
+      return;
+    }
+
+    final above = Navigator.maybeOf(_node.context);
+    if (above != null) {
+      _retell(above.widget.observers, event);
+    }
+  }
+
+  /// Tells one list, without letting any of them stop the others.
+  void _retell(
+    List<NavigatorObserver> observers,
+    void Function(NavigatorObserver observer) event,
+  ) {
+    for (final observer in List.of(observers)) {
+      try {
+        event(observer);
+      } on Object catch (error, stackTrace) {
+        _reportBackFailure(error, stackTrace, '$_retelling $observer');
+      }
+    }
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    // Mounting, and the only push of the node's own page there ever is: the
+    // page goes onto an empty navigator and never again, because a node does
+    // not empty itself. `previousRoute` is what says so, and it has to be
+    // asked rather than assumed: a `Page` is a `RouteSettings`, so a route
+    // pushed with the settings of the route it stands on -- which inside a node
+    // is the node's own page -- carries that very object, and the settings
+    // alone cannot tell the two apart.
+    if (previousRoute == null && _isOwnPage(route)) {
+      return;
+    }
+
+    _tell((observer) => observer.didPush(route, previousRoute));
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _tell((observer) => observer.didPop(route, previousRoute));
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _tell((observer) => observer.didRemove(route, previousRoute));
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) =>
+      _tell(
+        (observer) => observer.didReplace(
+          newRoute: newRoute,
+          oldRoute: oldRoute,
+        ),
+      );
+
+  @override
+  void didChangeTop(
+    Route<dynamic> topRoute,
+    Route<dynamic>? previousTopRoute,
+  ) {
+    // Mounting again — the node's page becoming the top one when there was no
+    // top before it. Becoming the top one later, once everything above it has
+    // gone, is a change of what is on screen like any other, and an
+    // application keeping track of where it is has to hear about that one.
+    if (previousTopRoute == null && _isOwnPage(topRoute)) {
+      return;
+    }
+
+    _tell((observer) => observer.didChangeTop(topRoute, previousTopRoute));
+  }
+
+  @override
+  void didStartUserGesture(
+    Route<dynamic> route,
+    Route<dynamic>? previousRoute,
+  ) =>
+      _tell((observer) => observer.didStartUserGesture(route, previousRoute));
+
+  @override
+  void didStopUserGesture() =>
+      _tell((observer) => observer.didStopUserGesture());
+}
+
 /// The single page a node starts with.
 ///
 /// It answers [ModalRoute.impliesAppBarDismissal] for itself, so that an
@@ -646,6 +929,7 @@ final class _NodeNavigator extends Navigator {
     super.key,
     required this.node,
     super.pages,
+    super.observers,
     super.onDidRemovePage,
     super.onGenerateRoute,
     super.onUnknownRoute,
@@ -791,6 +1075,13 @@ extension PreviousNavigatorExtension on NavigatorState {
 /// What the node was doing when it could not re-throw.
 const _decidingBack = 'while deciding what a system back does in a '
     'NavigationNode';
+
+/// What the node was doing when it could not re-throw.
+///
+/// Ends with the delegate itself: a failure that names the observer it came
+/// from is one step of the diagnosis already done, and an application hands a
+/// node several of them.
+const _retelling = 'while retelling the navigation inside a NavigationNode to';
 
 /// Reports what a node cannot re-throw.
 ///

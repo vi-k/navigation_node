@@ -36,12 +36,13 @@ nested navigator is built with, so another one would mean another navigator and
 an empty stack — and handing over a different one is refused by an assertion.
 Hold it in a `State` field rather than writing `GlobalKey()` inside `build`.
 
-`isRoot` marks a node that must not forward a pop any further. `onPop`
-intercepts the system back gesture: return `true` to let the pop through,
-`false` to keep the route, or a `Future<bool>` to decide after asking something
-— a confirmation dialog, typically. The context it is given is one from inside
-the node, so `showDialog(useRootNavigator: false)` puts that dialog in the node,
-below everything the node stands under.
+`observedFromAbove` and `observers` say who hears the navigation inside the
+node; both are described further down. `isRoot` marks a node that must not
+forward a pop any further. `onPop` intercepts the system back gesture: return
+`true` to let the pop through, `false` to keep the route, or a `Future<bool>`
+to decide after asking something — a confirmation dialog, typically. The context
+it is given is one from inside the node, so `showDialog(useRootNavigator: false)`
+puts that dialog in the node, below everything the node stands under.
 
 An asynchronous `onPop` is asked once at a time: a back press arriving while an
 answer is still pending is dropped rather than starting a second question. And
@@ -116,16 +117,66 @@ a node builds `/details` below the node, with everything the screen put over its
 subtree still among its ancestors. Nested nodes chain: each borrows from the one
 above it.
 
+Observers of the application see the navigation inside a node. The navigator a
+node builds reports to `MaterialApp.navigatorObservers` — a `RouteObserver`, an
+analytics observer, a logger of your own — the way the navigator of the
+application does, so a node costs nothing to put on a screen that is already
+watched. What a node hands its own navigator is a single observer of its own,
+and it retells what it hears: Flutter binds an observer instance to one
+navigator and asserts that it was bound to no other, so the instances an
+application has already declared cannot be handed over as well.
+
+Retelling binds nothing and unbinds nothing, and that is what lets one instance
+serve the application and every node in it at once. The price is that
+`NavigatorObserver.navigator` says nothing about the node. It is `null` for an
+observer that is never anything but a delegate; it is the navigator of the
+application for one the application declared; and it is never the navigator
+whose navigation has just been retold. An observer that reads it is asking about
+somewhere else — `HeroController` is the framework's own, and a node has nothing
+to do with it anyway. A delegate that raises is reported through
+`FlutterError.reportError` and stepped over, so that one failing observer takes
+neither the rest of the audience nor the navigator of the node with it.
+
+`observedFromAbove: false` keeps a node's navigation to itself, and `observers:`
+names observers for one node — one that is not on the navigator above, or one
+that should hear this node alone. Do not name one that already stands above: it
+would be told twice, and an assertion says so, wherever up the chain the other
+mention is. Nodes chain: a node inside a node inherits the whole audience of the
+navigator above it, so an outer node that is not observed cuts the nodes inside
+it off from the application — but not from its own `observers:`, which are part
+of that audience as well.
+
+The chain is made of nodes, and of nothing else. What a node inherits is the
+list the nearest `Navigator` above it was handed, so a plain nested `Navigator`
+of your own standing between a node and the application passes nothing on: it
+has no proxy to pass anything with, and its own `observers` are all the node can
+find. Name them on the node itself when that is the shape you have.
+
+The page a node builds for itself is announced to nobody when the node mounts.
+It stands for the route the node stands on, and the navigator above has
+announced that one already — otherwise an application would see two screens
+where it has one, and the second of them nameless. Everything after that is
+passed on as it is. A route pushed over that page names it as its previous
+route, which is what tells a `RouteAware` on the node's first page that
+something has covered it — through a `RouteObserver<PageRoute>` or wider, since
+the node builds a `PageRoute` and not a `MaterialPageRoute`. The page becoming
+the topmost one again is announced too, nameless as it is.
+
+Two things a node tells nobody. It says nothing as it leaves the tree: a node
+taken off screen with a stack still inside it disposes those routes the way any
+nested navigator does, without a `didPop` or a `didRemove` for any of them, so
+an observer that counts what is open closes its own books when the route holding
+the node goes. And a `RouteAware` on the node's first page hears that the node
+covered it, never that the application did — the route it is subscribed to is
+the node's page, and what the application pushes goes on another navigator
+entirely.
+
 ## What a node does not do
 
 **Nothing inside a node is restored.** The nested navigator is given no
 `restorationScopeId`, so a stack pushed inside a node does not survive the
 application being killed and brought back: it starts again from the node's own
 page.
-
-**The navigator inside a node takes no observers.** A `RouteObserver` or an
-analytics observer of the application does not see what is pushed and popped in
-there.
 
 **A `Hero` does not fly between routes pushed inside a node.** That is Flutter's
 own doing rather than the node's: a `Navigator` hides the `HeroControllerScope`

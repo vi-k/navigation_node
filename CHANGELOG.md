@@ -1,3 +1,49 @@
+## 0.2.0
+
+* Observers reach the navigation inside a node.
+  `NavigationNode(observedFromAbove:)` is `true` by default, so a
+  `RouteObserver`, an analytics observer or a logger an application declared for
+  its own navigator sees what a node pushes and pops the way it sees the rest of
+  the application. **This changes what an application is told without a line of
+  its own changing**: the silence of 0.1.x is `observedFromAbove: false`.
+  `NavigationNode(observers:)` names observers for one node besides — one that
+  is not on the navigator above, or one that should hear this node alone.
+* Handing those instances over was never a thing that could be done — Flutter
+  binds an observer to one navigator and asserts that it was bound to no other —
+  so a node hands its navigator a single observer of its own and retells the
+  seven hooks. Retelling binds nothing and unbinds nothing, which is what lets
+  one instance serve the application and every node in it at once, and what
+  makes `NavigatorObserver.navigator` say nothing about the node: it is `null`
+  for an observer that is never anything but a delegate, it is the navigator of
+  the application for one the application declared, and it is never the
+  navigator whose navigation was just retold. An observer that reads it —
+  `HeroController` is the framework's own — has no business here.
+* Nodes chain, each inheriting the whole audience of the navigator above it. A
+  node that is not observed cuts the nodes inside it off from the application,
+  though not from its own `observers`, which are part of that audience too.
+* The page a node builds for itself is announced to nobody when the node mounts:
+  it stands for the route the node stands on, which the navigator above has
+  announced already, and announcing it again would give an application two
+  screens where it has one, the second of them nameless. Everything after that
+  is passed on as it is — a route pushed over that page names it as its previous
+  route, which is what tells a `RouteAware` on the node's first page that
+  something has covered it.
+* An observer that already stands above is refused by an assertion when it is
+  named in `observers` as well — the nodes between are walked through, so a name
+  repeated further up the chain is refused too — and so is one observer named
+  twice in `observers` itself. Either would otherwise be told twice, and a
+  `RouteObserver` would wake its subscribers twice for one push. A delegate that
+  raises is reported through `FlutterError.reportError`, with the delegate
+  named, and stepped over: the observer that falls over need not be anything to
+  do with the node, and letting it out took the node's navigator down with it
+  for good.
+* The chain is made of nodes: a plain nested `Navigator` of an application's own
+  standing between a node and the application passes nothing on, since only a
+  node carries a proxy to pass it with.
+* A node says nothing as it leaves the tree, and a `RouteAware` on its first
+  page is told when the node covers it but not when the application does. Both
+  are written down in `README.md`.
+
 ## 0.1.1
 
 * Named routes work inside a node now, and land inside it. The nested navigator

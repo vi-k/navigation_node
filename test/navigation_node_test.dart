@@ -1459,6 +1459,567 @@ void main() {
             'gone with no node there at all',
       );
     });
+
+    // Flutter binds an observer instance to one navigator and one only: a
+    // static `Expando`, written under `assert(observer.navigator == null)`.
+    // The observers of an application are bound to its navigator already, so
+    // handing those same instances to the navigator inside a node is not a
+    // thing that can be done at all. The node hangs a proxy of its own there
+    // and retells what it hears.
+    testWidgets('an application observer hears what a node pushes', (
+      tester,
+    ) async {
+      final spy = _Spy();
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _ObservedHost(navigatorKey: key, appObservers: [spy]),
+      );
+      unawaited(key.currentState!.push(_namedRoute('details')));
+      await tester.pumpAndSettle();
+
+      expect(
+        spy.log,
+        contains('push details over -'),
+        reason: 'the node inherits the observers of the navigator above it, '
+            'and the route it pushed is announced to them',
+      );
+    });
+
+    // The page a node builds itself stands for the route the node stands on,
+    // and the navigator above has already announced that one. Announcing it a
+    // second time would give an application two screens where it has one --
+    // and a nameless one at that, since the node's page carries no name.
+    testWidgets('a node says nothing about mounting', (tester) async {
+      final spy = _Spy();
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _ObservedHost(navigatorKey: key, appObservers: [spy]),
+      );
+
+      expect(
+        spy.log,
+        ['push / over -', 'top / after -'],
+        reason: 'only the route of the application is announced: the page the '
+            'node builds for itself is the same screen seen from inside',
+      );
+    });
+
+    // The other half of the same rule. The node's page becoming the top one
+    // again is a real change of what is on screen, and an application that
+    // keeps track of where it is has to hear it.
+    testWidgets('a node says so when its own page is on top again', (
+      tester,
+    ) async {
+      final spy = _Spy();
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _ObservedHost(navigatorKey: key, appObservers: [spy]),
+      );
+      unawaited(key.currentState!.push(_namedRoute('details')));
+      await tester.pumpAndSettle();
+      key.currentState!.pop();
+      await tester.pumpAndSettle();
+
+      expect(spy.log, contains('top - after details'));
+    });
+
+    testWidgets('a delegate is bound to no navigator', (tester) async {
+      final spy = _Spy();
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _ObservedHost(navigatorKey: key, nodeObservers: [spy]),
+      );
+      unawaited(key.currentState!.push(_namedRoute('details')));
+      await tester.pumpAndSettle();
+
+      expect(
+        spy.log,
+        contains('push details over -'),
+        reason: 'it is told everything',
+      );
+      expect(
+        spy.navigator,
+        isNull,
+        reason: 'and it is bound to nothing, which is the whole point: an '
+            'instance bound to a navigator cannot be given to another',
+      );
+    });
+
+    // The shape the whole design exists for: one `RouteObserver`, one
+    // analytics observer, one of everything, watching the navigator of the
+    // application and the navigator of every node at the same time.
+    testWidgets('one instance serves the application and two nodes at once', (
+      tester,
+    ) async {
+      final spy = _Spy();
+      final first = GlobalKey<NodeNavigatorState>();
+      final second = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _TwoNodesHost(first: first, second: second, observers: [spy]),
+      );
+      unawaited(first.currentState!.push(_namedRoute('a')));
+      unawaited(second.currentState!.push(_namedRoute('b')));
+      await tester.pumpAndSettle();
+
+      expect(spy.log, containsAll(['push a over -', 'push b over -']));
+      expect(
+        spy.navigator,
+        isNotNull,
+        reason: 'the same instance is bound to the navigator of the '
+            'application, and serving two nodes has not disturbed that',
+      );
+    });
+
+    testWidgets('all seven hooks reach a delegate', (tester) async {
+      final spy = _Spy();
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _ObservedHost(navigatorKey: key, nodeObservers: [spy]),
+      );
+
+      final navigator = key.currentState!;
+      final a = _namedRoute('a');
+      final c = _namedRoute('c');
+
+      unawaited(navigator.push(a));
+      await tester.pumpAndSettle();
+      unawaited(navigator.pushReplacement(_namedRoute('b')));
+      await tester.pumpAndSettle();
+      unawaited(navigator.push(c));
+      await tester.pumpAndSettle();
+      navigator.removeRoute(c);
+      await tester.pumpAndSettle();
+      navigator
+        ..didStartUserGesture()
+        ..didStopUserGesture()
+        ..pop();
+      await tester.pumpAndSettle();
+
+      expect(
+        spy.log,
+        containsAll([
+          'push a over -',
+          'replace b for a',
+          'push c over b',
+          'remove c over b',
+          'top b after c',
+          'gesture start b',
+          'gesture stop',
+          'pop b over -',
+        ]),
+      );
+    });
+
+    testWidgets(
+        'a node tells the observers it was given before the ones it '
+        'inherits', (tester) async {
+      final log = <String>[];
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _ObservedHost(
+          navigatorKey: key,
+          appObservers: [_Spy(log: log, label: 'app ')],
+          nodeObservers: [_Spy(log: log, label: 'node ')],
+        ),
+      );
+      unawaited(key.currentState!.push(_namedRoute('details')));
+      await tester.pumpAndSettle();
+
+      expect(
+        log.where((entry) => entry.contains('push details')),
+        ['node push details over -', 'app push details over -'],
+        reason: 'the list first, the inherited ones after',
+      );
+    });
+
+    testWidgets('a node that is not observed keeps the application out', (
+      tester,
+    ) async {
+      final app = _Spy();
+      final node = _Spy();
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _ObservedHost(
+          navigatorKey: key,
+          observedFromAbove: false,
+          appObservers: [app],
+          nodeObservers: [node],
+        ),
+      );
+      unawaited(key.currentState!.push(_namedRoute('details')));
+      await tester.pumpAndSettle();
+
+      expect(
+        app.log,
+        isNot(contains('push details over -')),
+        reason: 'the node was told not to inherit',
+      );
+      expect(
+        node.log,
+        contains('push details over -'),
+        reason: 'what it was given by hand is another matter',
+      );
+    });
+
+    // A node inside a node inherits from the navigator above it, which is the
+    // navigator of the outer node -- whose observers are its own proxy. So the
+    // chain forms itself, the way the borrowed route table does.
+    testWidgets('a node inside a node inherits through it', (tester) async {
+      final spy = _Spy();
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _NestedObservedHost(inner: key, appObservers: [spy]),
+      );
+      unawaited(key.currentState!.push(_namedRoute('details')));
+      await tester.pumpAndSettle();
+
+      expect(spy.log, contains('push details over -'));
+    });
+
+    testWidgets('an outer node that is not observed cuts the chain', (
+      tester,
+    ) async {
+      final spy = _Spy();
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _NestedObservedHost(
+          inner: key,
+          outerObserved: false,
+          appObservers: [spy],
+        ),
+      );
+      unawaited(key.currentState!.push(_namedRoute('details')));
+      await tester.pumpAndSettle();
+
+      expect(
+        spy.log,
+        isNot(contains('push details over -')),
+        reason: 'the inner node inherits the audience of the navigator above '
+            'it, and the outer node has none to pass on',
+      );
+    });
+
+    // What an inner node inherits is the audience of the navigator above it,
+    // and that audience is the outer node's own list as much as anything the
+    // outer node inherits itself. So an outer node that is not observed is cut
+    // off from the application, not from its own observers.
+    testWidgets('the observers of an outer node hear the nodes inside it', (
+      tester,
+    ) async {
+      final app = _Spy();
+      final outer = _Spy();
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _NestedObservedHost(
+          inner: key,
+          appObservers: [app],
+          outerObservers: [outer],
+          outerObserved: false,
+        ),
+      );
+      unawaited(key.currentState!.push(_namedRoute('details')));
+      await tester.pumpAndSettle();
+
+      expect(
+        outer.log,
+        contains('push details over -'),
+        reason: 'the inner node inherits the audience of the navigator above, '
+            'and the outer node is part of it',
+      );
+      expect(
+        app.log,
+        isNot(contains('push details over -')),
+        reason: 'what the outer node does not pass on is the audience it '
+            'would have inherited itself',
+      );
+    });
+
+    // What the node keeps quiet about is its own page, not the events that
+    // mention it. A `RouteAware` on the node's first page is subscribed to
+    // exactly that route, and it is told it was covered because the push of
+    // the route above it is passed on with its previous route intact.
+    testWidgets('a RouteAware inside a node still hears it was covered', (
+      tester,
+    ) async {
+      final heard = <String>[];
+      final observer = RouteObserver<PageRoute<dynamic>>();
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _RouteAwareHost(navigatorKey: key, observer: observer, heard: heard),
+      );
+      unawaited(key.currentState!.push(_namedRoute('details')));
+      await tester.pumpAndSettle();
+      key.currentState!.pop();
+      await tester.pumpAndSettle();
+
+      expect(heard, ['push', 'push next', 'pop next']);
+    });
+
+    // The proxy reads the list at the moment it retells something rather than
+    // remembering it, and the list the navigator itself is handed never
+    // changes -- `NavigatorState.didUpdateWidget` compares that one by
+    // identity and would unsubscribe and resubscribe the proxy on every build.
+    testWidgets('a list handed on a rebuild is the one the next event goes to',
+        (tester) async {
+      final first = _Spy();
+      final second = _Spy();
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _ObservedHost(navigatorKey: key, nodeObservers: [first]),
+      );
+      final handed = key.currentState!.widget.observers;
+      unawaited(key.currentState!.push(_namedRoute('a')));
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(
+        _ObservedHost(navigatorKey: key, nodeObservers: [second]),
+      );
+      unawaited(key.currentState!.push(_namedRoute('b')));
+      await tester.pumpAndSettle();
+
+      expect(first.log, ['push a over -', 'top a after -']);
+      expect(second.log, ['push b over a', 'top b after a']);
+      expect(
+        identical(key.currentState!.widget.observers, handed),
+        isTrue,
+        reason: 'the navigator is handed the same list it was handed before',
+      );
+    });
+
+    // `Page` is a `RouteSettings`, so an application is free to push a route
+    // carrying the settings of the route it stands on -- and inside a node,
+    // that object is the node's own page. Recognising the page by those
+    // settings alone therefore swallowed the push of a route that merely
+    // borrowed them, leaving observers with a top change and a pop for a route
+    // they had never been told about.
+    testWidgets(
+        'a route pushed with the settings of the node page is '
+        'announced', (tester) async {
+      final spy = _Spy();
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _ObservedHost(navigatorKey: key, nodeObservers: [spy]),
+      );
+
+      unawaited(
+        key.currentState!.push(
+          MaterialPageRoute<void>(
+            settings: key.currentState!.widget.pages.single,
+            builder: (context) =>
+                const Scaffold(body: Center(child: Text('borrowed'))),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        spy.log.where((entry) => entry.startsWith('push')),
+        hasLength(1),
+        reason: 'the node keeps quiet about mounting, and mounting is the one '
+            'push of its own page there is',
+      );
+    });
+
+    // The observer that falls over need not be anything to do with the node:
+    // one the application declared for its own navigator is retold to as well,
+    // and letting it out took the node's navigator down with it -- the flush
+    // stopped halfway, the debug lock stayed raised, and every later push of
+    // that node failed on an assertion.
+    testWidgets('a delegate that raises is reported and the rest are told', (
+      tester,
+    ) async {
+      final reported = <FlutterErrorDetails>[];
+      final previous = FlutterError.onError;
+      FlutterError.onError = (details) {
+        reported.add(details);
+        previous?.call(details);
+      };
+      addTearDown(() => FlutterError.onError = previous);
+
+      final ofTheNode = _Spy();
+      final ofTheApplication = _Spy();
+      final key = GlobalKey<NodeNavigatorState>();
+
+      // The one that raises is the application's, which is the whole point:
+      // it belongs to another navigator entirely and used to take this one
+      // down. It also stands in the inherited half of the audience, so what is
+      // told after it is told there too.
+      await tester.pumpWidget(
+        _ObservedHost(
+          navigatorKey: key,
+          appObservers: [_Thrower(on: 'a'), ofTheApplication],
+          nodeObservers: [ofTheNode],
+        ),
+      );
+      unawaited(key.currentState!.push(_namedRoute('a')));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isA<StateError>());
+      expect(reported, hasLength(1));
+      expect(reported.single.library, 'navigation_node');
+      expect(
+        reported.single.context.toString(),
+        contains('_Thrower'),
+        reason: 'the report names the delegate the failure came from',
+      );
+      expect(ofTheNode.log, contains('push a over -'));
+      expect(
+        ofTheApplication.log,
+        contains('push a over -'),
+        reason: 'the delegate standing after the one that raised is still '
+            'told, in the inherited half of the audience as much as the other',
+      );
+
+      unawaited(key.currentState!.push(_namedRoute('b')));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        ofTheNode.log,
+        contains('push b over a'),
+        reason: 'and the navigator of the node still pushes at all',
+      );
+      expect(ofTheApplication.log, contains('push b over a'));
+    });
+
+    // `observedFromAbove` already hands the node the observers of the
+    // application, and the dartdoc of `observers` sells one instance for every
+    // navigator -- so naming the same one again is the natural mistake. A
+    // `Navigator` refuses a repeated observer by way of the binding it makes;
+    // nothing binds a delegate, so the node has to say so itself.
+    testWidgets('an observer the node already inherits is refused', (
+      tester,
+    ) async {
+      final spy = _Spy();
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _ObservedHost(
+          navigatorKey: key,
+          appObservers: [spy],
+          nodeObservers: [spy],
+        ),
+      );
+
+      expect(
+        tester.takeException(),
+        isA<AssertionError>().having(
+          (error) => error.message.toString(),
+          'message',
+          contains('already telling'),
+        ),
+      );
+    });
+
+    // The audience an inner node reaches is not the one list the navigator
+    // above declares: that list is the outer node's own observer, and behind it
+    // stand the outer node's `observers` and whatever the outer node inherits
+    // in turn. Measuring against the declared list alone let the very thing
+    // this assertion exists for through without a word -- in a chain of nodes,
+    // where it is hardest to spot by reading.
+    testWidgets('an observer named in a node above as well is refused', (
+      tester,
+    ) async {
+      final spy = _Spy();
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _NestedObservedHost(
+          inner: key,
+          appObservers: const [],
+          outerObservers: [spy],
+          innerObservers: [spy],
+        ),
+      );
+
+      expect(tester.takeException(), isA<AssertionError>());
+    });
+
+    testWidgets('an observer of the application is refused two nodes down', (
+      tester,
+    ) async {
+      final spy = _Spy();
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _NestedObservedHost(
+          inner: key,
+          appObservers: [spy],
+          innerObservers: [spy],
+        ),
+      );
+
+      expect(tester.takeException(), isA<AssertionError>());
+    });
+
+    testWidgets('an observer named twice in one list is refused', (
+      tester,
+    ) async {
+      final spy = _Spy();
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(
+        _ObservedHost(
+          navigatorKey: key,
+          observedFromAbove: false,
+          nodeObservers: [spy, spy],
+        ),
+      );
+
+      expect(tester.takeException(), isA<AssertionError>());
+    });
+
+    // A delegate that takes itself off the list when it hears something is an
+    // ordinary shape, and walking the caller's own list while it changes threw
+    // `ConcurrentModificationError` out of the middle of the navigator's flush
+    // -- which left `_debugLocked` raised and every later push of that node
+    // failing on an assertion, for the lifetime of the widget.
+    testWidgets('a delegate that leaves the list mid-event breaks nothing', (
+      tester,
+    ) async {
+      final spy = _Spy();
+      final observers = <NavigatorObserver>[];
+      final key = GlobalKey<NodeNavigatorState>();
+      observers
+        ..add(_SelfRemoving(observers))
+        ..add(spy);
+
+      await tester.pumpWidget(
+        _ObservedHost(navigatorKey: key, nodeObservers: observers),
+      );
+      unawaited(key.currentState!.push(_namedRoute('a')));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        spy.log,
+        contains('push a over -'),
+        reason: 'the delegate standing after the one that left is still told',
+      );
+
+      unawaited(key.currentState!.push(_namedRoute('b')));
+      await tester.pumpAndSettle();
+
+      expect(
+        spy.log,
+        contains('push b over a'),
+        reason: 'and the navigator of the node is still able to push at all',
+      );
+    });
   });
 }
 
@@ -2436,4 +2997,255 @@ final class _NamedRoutesHost extends StatelessWidget {
               ),
         },
       );
+}
+
+/// Writes down what a navigator tells it, in the order it is told.
+///
+/// Two spies sharing one [log] record the order they were told in.
+final class _Spy extends NavigatorObserver {
+  final List<String> log;
+  final String label;
+
+  _Spy({List<String>? log, this.label = ''}) : log = log ?? <String>[];
+
+  static String _name(Route<dynamic>? route) => route?.settings.name ?? '-';
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      log.add('${label}push ${_name(route)} over ${_name(previousRoute)}');
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      log.add('${label}pop ${_name(route)} over ${_name(previousRoute)}');
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      log.add('${label}remove ${_name(route)} over ${_name(previousRoute)}');
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) =>
+      log.add('${label}replace ${_name(newRoute)} for ${_name(oldRoute)}');
+
+  @override
+  void didChangeTop(
+    Route<dynamic> topRoute,
+    Route<dynamic>? previousTopRoute,
+  ) =>
+      log.add(
+        '${label}top ${_name(topRoute)} after ${_name(previousTopRoute)}',
+      );
+
+  @override
+  void didStartUserGesture(
+    Route<dynamic> route,
+    Route<dynamic>? previousRoute,
+  ) =>
+      log.add('${label}gesture start ${_name(route)}');
+
+  @override
+  void didStopUserGesture() => log.add('${label}gesture stop');
+}
+
+/// A route a spy's log names, so that a test can read the log as a story.
+Route<void> _namedRoute(String name) => MaterialPageRoute<void>(
+      settings: RouteSettings(name: name),
+      builder: (context) => Scaffold(body: Center(child: Text(name))),
+    );
+
+/// The first page of a node the observer tests put on a route.
+final class _ObservedContent extends StatelessWidget {
+  const _ObservedContent();
+
+  @override
+  Widget build(BuildContext context) =>
+      const Scaffold(body: Center(child: Text('node content')));
+}
+
+/// An application whose observers watch the node, or the node's own do.
+final class _ObservedHost extends StatelessWidget {
+  final GlobalKey<NodeNavigatorState> navigatorKey;
+  final List<NavigatorObserver> appObservers;
+  final List<NavigatorObserver> nodeObservers;
+  final bool observedFromAbove;
+
+  const _ObservedHost({
+    required this.navigatorKey,
+    this.appObservers = const [],
+    this.nodeObservers = const [],
+    this.observedFromAbove = true,
+  });
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        navigatorObservers: appObservers,
+        home: NavigationNode(
+          navigatorKey: navigatorKey,
+          observedFromAbove: observedFromAbove,
+          observers: nodeObservers,
+          child: const _ObservedContent(),
+        ),
+      );
+}
+
+/// Two nodes on one route, and one observer instance for both of them and the
+/// navigator of the application besides.
+final class _TwoNodesHost extends StatelessWidget {
+  final GlobalKey<NodeNavigatorState> first;
+  final GlobalKey<NodeNavigatorState> second;
+  final List<NavigatorObserver> observers;
+
+  const _TwoNodesHost({
+    required this.first,
+    required this.second,
+    required this.observers,
+  });
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        navigatorObservers: observers,
+        home: Column(
+          children: [
+            Expanded(
+              child: NavigationNode(
+                navigatorKey: first,
+                observedFromAbove: false,
+                observers: observers,
+                child: const _ObservedContent(),
+              ),
+            ),
+            Expanded(
+              child: NavigationNode(
+                navigatorKey: second,
+                observedFromAbove: false,
+                observers: observers,
+                child: const _ObservedContent(),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+/// A node inside a node, so that inheritance can be watched chaining.
+final class _NestedObservedHost extends StatelessWidget {
+  final GlobalKey<NodeNavigatorState> inner;
+  final List<NavigatorObserver> appObservers;
+  final List<NavigatorObserver> outerObservers;
+  final List<NavigatorObserver> innerObservers;
+  final bool outerObserved;
+
+  const _NestedObservedHost({
+    required this.inner,
+    required this.appObservers,
+    this.outerObservers = const [],
+    this.innerObservers = const [],
+    this.outerObserved = true,
+  });
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        navigatorObservers: appObservers,
+        home: NavigationNode(
+          observedFromAbove: outerObserved,
+          observers: outerObservers,
+          child: NavigationNode(
+            navigatorKey: inner,
+            observers: innerObservers,
+            child: const _ObservedContent(),
+          ),
+        ),
+      );
+}
+
+/// A node whose first page asks the application's [RouteObserver] to tell it
+/// when it is covered.
+final class _RouteAwareHost extends StatelessWidget {
+  final GlobalKey<NodeNavigatorState> navigatorKey;
+  final RouteObserver<PageRoute<dynamic>> observer;
+  final List<String> heard;
+
+  const _RouteAwareHost({
+    required this.navigatorKey,
+    required this.observer,
+    required this.heard,
+  });
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        navigatorObservers: [observer],
+        home: NavigationNode(
+          navigatorKey: navigatorKey,
+          child: _Watcher(observer: observer, heard: heard),
+        ),
+      );
+}
+
+/// A widget on the node's first page, subscribed to the route it is built on.
+final class _Watcher extends StatefulWidget {
+  final RouteObserver<PageRoute<dynamic>> observer;
+  final List<String> heard;
+
+  const _Watcher({required this.observer, required this.heard});
+
+  @override
+  State<_Watcher> createState() => _WatcherState();
+}
+
+final class _WatcherState extends State<_Watcher> with RouteAware {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic>) {
+      widget.observer.subscribe(this, route);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.observer.unsubscribe(this);
+    super.dispose();
+  }
+
+  @override
+  void didPush() => widget.heard.add('push');
+
+  @override
+  void didPushNext() => widget.heard.add('push next');
+
+  @override
+  void didPopNext() => widget.heard.add('pop next');
+
+  @override
+  Widget build(BuildContext context) => const Text('watching');
+}
+
+/// A delegate that takes itself off the list the moment it hears something.
+final class _SelfRemoving extends NavigatorObserver {
+  final List<NavigatorObserver> from;
+
+  _SelfRemoving(this.from);
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      from.remove(this);
+}
+
+/// A delegate that falls over when it hears about one particular route.
+///
+/// One that fell over at every push could not be given to the application at
+/// all: the root navigator announces its own first route while the application
+/// is being built, and nothing catches an observer there.
+final class _Thrower extends NavigatorObserver {
+  final String on;
+
+  _Thrower({required this.on});
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route.settings.name == on) {
+      throw StateError('the observer fell over');
+    }
+  }
 }

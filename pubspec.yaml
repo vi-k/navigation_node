@@ -2,7 +2,7 @@ name: navigation_node
 description: "A nested Navigator for Flutter: dialogs, sheets and pushed routes
   stay inside the screen that opened them, and the system back reaches the
   innermost one first."
-version: 0.1.1
+version: 0.2.0
 homepage: https://github.com/vi-k/navigation_node
 repository: https://github.com/vi-k/navigation_node
 issue_tracker: https://github.com/vi-k/navigation_node/issues
