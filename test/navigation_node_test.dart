@@ -5,7 +5,19 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:leak_tracker_flutter_testing/leak_tracker_flutter_testing.dart';
 import 'package:navigation_node/navigation_node.dart';
+
+/// The leak tracker is on for this suite, and `restartAndRestore` leaves two
+/// objects of the test binding's own behind: the manager it restarts through
+/// and the bucket it hands out. They are not the node's, nothing in the
+/// package can dispose them, and the whole suite happens to be green only
+/// because a later test's binding clears them — run one restoration test on
+/// its own and the tracker says so. Ignored by name rather than wholesale, so
+/// that anything of ours leaking in these tests is still caught.
+final _restorationLeaks = LeakTesting.settings.withIgnored(
+  classes: ['TestRestorationManager', 'RestorationBucket'],
+);
 
 void main() {
   group('NavigationNode', () {
@@ -1459,6 +1471,103 @@ void main() {
             'gone with no node there at all',
       );
     });
+
+    // A navigator restores nothing without an identifier, and the node's own
+    // page needs one of its own besides: routes pushed imperatively are kept
+    // under the page they were pushed over, and a page with no identifier
+    // takes no part in restoration.
+    testWidgets(
+      'a node restores the stack pushed inside it',
+      (tester) async {
+        final key = GlobalKey<NodeNavigatorState>();
+
+        await tester.pumpWidget(
+          _RestorationHost(navigatorKey: key, scopeId: 'node'),
+        );
+        key.currentState!.restorablePush(_restorableDetails);
+        await tester.pumpAndSettle();
+        expect(find.text('details'), findsOneWidget);
+
+        await tester.restartAndRestore();
+
+        expect(find.text('details'), findsOneWidget);
+      },
+      experimentalLeakTesting: _restorationLeaks,
+    );
+
+    testWidgets(
+      'control: without an identifier it restores nothing',
+      (
+        tester,
+      ) async {
+        final key = GlobalKey<NodeNavigatorState>();
+
+        await tester.pumpWidget(_RestorationHost(navigatorKey: key));
+        key.currentState!.restorablePush(_restorableDetails);
+        await tester.pumpAndSettle();
+        expect(find.text('details'), findsOneWidget);
+
+        await tester.restartAndRestore();
+
+        expect(
+          find.text('details'),
+          findsNothing,
+          reason: 'the node starts again from its own page, as it always did',
+        );
+        expect(find.text('node content'), findsOneWidget);
+      },
+      experimentalLeakTesting: _restorationLeaks,
+    );
+
+    // The route table is borrowed from the navigator above, and a restorable
+    // push by name goes through that table: the two features have to work in
+    // the same breath, since a name is how most of this gets pushed at all.
+    testWidgets(
+      'a name pushed restorably inside a node comes back',
+      (
+        tester,
+      ) async {
+        final key = GlobalKey<NodeNavigatorState>();
+
+        await tester.pumpWidget(
+          _RestorationHost(navigatorKey: key, scopeId: 'node'),
+        );
+        key.currentState!.restorablePushNamed('/details');
+        await tester.pumpAndSettle();
+        expect(find.text('named details'), findsOneWidget);
+
+        await tester.restartAndRestore();
+
+        expect(find.text('named details'), findsOneWidget);
+      },
+      experimentalLeakTesting: _restorationLeaks,
+    );
+
+    testWidgets(
+      'two nodes with two identifiers each restore their own',
+      (
+        tester,
+      ) async {
+        final first = GlobalKey<NodeNavigatorState>();
+        final second = GlobalKey<NodeNavigatorState>();
+
+        await tester.pumpWidget(
+          _TwoRestorationHosts(first: first, second: second),
+        );
+        first.currentState!.restorablePush(_restorableDetails);
+        await tester.pumpAndSettle();
+
+        await tester.restartAndRestore();
+
+        expect(find.text('details'), findsOneWidget);
+        expect(
+          find.text('second node'),
+          findsOneWidget,
+          reason: 'the node that was not pushed into is where it was',
+        );
+      },
+      experimentalLeakTesting: _restorationLeaks,
+    );
 
     // Flutter binds an observer instance to one navigator and one only: a
     // static `Expando`, written under `assert(observer.navigator == null)`.
@@ -3248,4 +3357,70 @@ final class _Thrower extends NavigatorObserver {
       throw StateError('the observer fell over');
     }
   }
+}
+
+/// Builds the page the restoration tests push.
+///
+/// A top-level function on purpose: a restorable push keeps the *reference* to
+/// the builder, not a closure, which is what lets it be built again after the
+/// application has been killed.
+Route<void> _restorableDetails(BuildContext context, Object? arguments) =>
+    MaterialPageRoute<void>(
+      builder: (context) =>
+          const Scaffold(body: Center(child: Text('details'))),
+    );
+
+/// An application that restores, with a node that may or may not.
+final class _RestorationHost extends StatelessWidget {
+  final GlobalKey<NodeNavigatorState> navigatorKey;
+  final String? scopeId;
+
+  const _RestorationHost({required this.navigatorKey, this.scopeId});
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        restorationScopeId: 'app',
+        routes: {
+          '/details': (context) =>
+              const Scaffold(body: Center(child: Text('named details'))),
+        },
+        home: NavigationNode(
+          navigatorKey: navigatorKey,
+          restorationScopeId: scopeId,
+          child: const _ObservedContent(),
+        ),
+      );
+}
+
+/// Two nodes on one route, each with an identifier of its own.
+final class _TwoRestorationHosts extends StatelessWidget {
+  final GlobalKey<NodeNavigatorState> first;
+  final GlobalKey<NodeNavigatorState> second;
+
+  const _TwoRestorationHosts({required this.first, required this.second});
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        restorationScopeId: 'app',
+        home: Column(
+          children: [
+            Expanded(
+              child: NavigationNode(
+                navigatorKey: first,
+                restorationScopeId: 'first',
+                child: const _ObservedContent(),
+              ),
+            ),
+            Expanded(
+              child: NavigationNode(
+                navigatorKey: second,
+                restorationScopeId: 'second',
+                child: const Scaffold(
+                  body: Center(child: Text('second node')),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
 }

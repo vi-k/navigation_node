@@ -188,6 +188,32 @@ final class NavigationNode extends StatefulWidget {
   /// [observers] still says who hears it then.
   final bool observedFromAbove;
 
+  /// The identifier under which the stack inside this node is kept and
+  /// restored.
+  ///
+  /// `null` by default, and then nothing inside the node survives the
+  /// application being killed and brought back: it starts again from the
+  /// node's own page. Given a name, the node's navigator keeps its stack in a
+  /// `RestorationBucket` of that name, and its own page is entered in it as
+  /// well — a route pushed imperatively is kept under the page it was pushed
+  /// over, so without that the stack above it could not come back either.
+  ///
+  /// What comes back is what Flutter can build again without the code that
+  /// pushed it: `restorablePush` and its neighbours, which keep a reference to
+  /// a static builder and arguments that survive being written down. An
+  /// ordinary `push` carries a closure and is never restored — that is the
+  /// framework's rule and not the node's. `restorablePushNamed` works from
+  /// inside a node like any other name: the route table is borrowed from the
+  /// navigator above, and it is borrowed again when the name is built anew.
+  ///
+  /// The name has to be unique among everything that claims a bucket from the
+  /// same scope — two nodes on one route need two names, and the framework
+  /// says so with «Multiple owners claimed child RestorationBuckets with the
+  /// same IDs» rather than quietly mixing the two. And none of it happens at
+  /// all unless the application enables restoration for itself:
+  /// `MaterialApp.restorationScopeId`, or a `RootRestorationScope` of its own.
+  final String? restorationScopeId;
+
   /// Creates a navigation node around [child].
   const NavigationNode({
     super.key,
@@ -197,6 +223,7 @@ final class NavigationNode extends StatefulWidget {
     this.enabled = true,
     this.observedFromAbove = true,
     this.observers = const [],
+    this.restorationScopeId,
     required this.child,
   });
 
@@ -247,7 +274,18 @@ final class _NavigationNodeState extends State<NavigationNode> {
   late List<Page<void>> _pages = _buildPages();
 
   List<Page<void>> _buildPages() => [
-        _NodePage(child: widget.child, leavesTheNode: !widget.isRoot),
+        _NodePage(
+          child: widget.child,
+          leavesTheNode: !widget.isRoot,
+          // Constant, and needed all the same. The bucket of this page lives
+          // inside the bucket of the node's navigator, so there is nothing for
+          // its name to collide with -- but a page with no name at all takes
+          // no part in restoration, and the routes pushed over it are kept
+          // under it. Without this the navigator's own identifier restores an
+          // empty stack.
+          restorationId:
+              widget.restorationScopeId == null ? null : _nodePageRestorationId,
+        ),
       ];
 
   /// The node's navigator never removes the node's own page, and the pages API
@@ -260,7 +298,9 @@ final class _NavigationNodeState extends State<NavigationNode> {
     super.didUpdateWidget(oldWidget);
 
     if (!identical(widget.child, oldWidget.child) ||
-        widget.isRoot != oldWidget.isRoot) {
+        widget.isRoot != oldWidget.isRoot ||
+        (widget.restorationScopeId == null) !=
+            (oldWidget.restorationScopeId == null)) {
       _pages = _buildPages();
     }
   }
@@ -545,6 +585,7 @@ final class _NavigationNodeState extends State<NavigationNode> {
         node: this,
         pages: _pages,
         observers: _observers,
+        restorationScopeId: widget.restorationScopeId,
         onDidRemovePage: _onDidRemovePage,
         onGenerateRoute: above?.widget.onGenerateRoute,
         onUnknownRoute: above?.widget.onUnknownRoute,
@@ -928,7 +969,11 @@ final class _NodePage extends MaterialPage<void> {
   /// Whether a pop of this page goes on to the navigator above.
   final bool leavesTheNode;
 
-  const _NodePage({required super.child, required this.leavesTheNode});
+  const _NodePage({
+    required super.child,
+    required this.leavesTheNode,
+    super.restorationId,
+  });
 
   @override
   Route<void> createRoute(BuildContext context) => _NodePageRoute(this);
@@ -962,6 +1007,7 @@ final class _NodeNavigator extends Navigator {
     required this.node,
     super.pages,
     super.observers,
+    super.restorationScopeId,
     super.onDidRemovePage,
     super.onGenerateRoute,
     super.onUnknownRoute,
@@ -1121,6 +1167,9 @@ extension PreviousNavigatorExtension on NavigatorState {
     return prevNavigator;
   }
 }
+
+/// The name the node's own page is entered under, inside the node's own bucket.
+const _nodePageRestorationId = 'node';
 
 /// What the node was doing when it could not re-throw.
 const _decidingBack = 'while deciding what a system back does in a '

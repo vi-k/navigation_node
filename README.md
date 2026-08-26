@@ -97,6 +97,7 @@ each back press.
 | `navigatorKey` | reaches `NodeNavigatorState` from outside | `null` |
 | `observedFromAbove` | inherits the observers of the navigator above | `true` |
 | `observers` | observers for this node alone | `const []` |
+| `restorationScopeId` | keeps the stack inside across a restart | `null` |
 
 Each of them is documented in full in the API reference; what follows is what
 you need before reaching for it.
@@ -152,6 +153,33 @@ inside a node builds `/details` below the node, with everything the screen put
 over its subtree still among its ancestors. Nested nodes chain: each borrows
 from the one above it.
 
+## State restoration
+
+`restorationScopeId` gives the node's navigator a name to keep its stack under,
+and the stack inside a node then survives the application being killed and
+brought back:
+
+```dart
+NavigationNode(
+  restorationScopeId: 'checkout',
+  child: const ScreenBody(),
+)
+```
+
+What comes back is what Flutter can build again without the code that pushed
+it: `restorablePush` and its neighbours, which keep a reference to a static
+builder rather than a closure. An ordinary `push` is never restored — that is
+the framework's rule and not the node's. `restorablePushNamed` works from
+inside a node like any other name, and the route table it needs is borrowed
+from the navigator above when the name is built anew.
+
+Two nodes on one route need two names. The framework says so itself —
+*Multiple owners claimed child RestorationBuckets with the same IDs* — rather
+than quietly mixing one stack into the other. And none of this happens unless
+the application enables restoration for itself, with
+`MaterialApp.restorationScopeId` or a `RootRestorationScope` of its own; a node
+given a name under an application that restores nothing simply keeps it unused.
+
 ## Observers
 
 Observers of the application see the navigation inside a node. The navigator a
@@ -189,11 +217,6 @@ never told is that the *application* covered it, and a node leaving the tree
 says nothing about the routes it takes with it.
 
 ## What a node does not do
-
-**Nothing inside a node is restored.** The nested navigator is given no
-`restorationScopeId`, so a stack pushed inside a node does not survive the
-application being killed and brought back: it starts again from the node's own
-page.
 
 **A `Hero` does not fly between routes pushed inside a node.** That is Flutter's
 own doing rather than the node's: a `Navigator` hides the `HeroControllerScope`

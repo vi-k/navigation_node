@@ -1,6 +1,15 @@
-## 0.2.1
+## 0.3.0
 
-* Documentation only; nothing about the package behaves differently.
+* The stack inside a node can be restored. `NavigationNode(restorationScopeId:)`
+  gives the node's navigator a name to keep it under, and what was pushed with
+  `restorablePush` — or `restorablePushNamed`, through the route table the node
+  borrows — comes back after the application is killed and started again. An
+  ordinary `push` carries a closure and is never restored, which is the
+  framework's rule rather than the node's; two nodes on one route need two
+  names, and the framework says so itself rather than mixing one stack into the
+  other. Nothing happens at all unless the application enables restoration for
+  itself. This was the last of the three things `README.md` used to list under
+  "what a node does not do" that was the node's own doing.
 * `NodeNavigatorState.pop`, `maybePop` and `popUntil` are documented. They were
   overridden without a doc comment, so the API reference and the tooltip of an
   IDE showed what `NavigatorState` says about them — which for a node is untrue:
