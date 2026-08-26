@@ -83,7 +83,7 @@ class _Stage extends StatefulWidget {
 }
 
 class _StageState extends State<_Stage> {
-  var _manager = PocketRestorationManager();
+  final _manager = PocketRestorationManager();
 
   /// Counts the lives of the node: a new one is a new tree, from the navigator
   /// down, which is what makes the pretence worth anything.
@@ -126,8 +126,6 @@ class _StageState extends State<_Stage> {
     final kept = _manager.saved;
     journal.log('kept ${kept?.length ?? 0} bytes, as a kill would');
 
-    final dead = _manager..removeListener(_takeTheNewBucket);
-
     setState(() {
       // Everything below goes: the node, its navigator, the routes on it. That
       // is the part a pretended kill has to get right. Unwinding the stack of a
@@ -136,13 +134,15 @@ class _StageState extends State<_Stage> {
       // was still arriving, and the framework said so.
       _life++;
       _bucket = null;
-      _manager = PocketRestorationManager()
-        ..begin(kept: kept)
-        ..addListener(_takeTheNewBucket);
     });
 
-    dead.dispose();
-    _takeTheNewBucket();
+    // The same manager, handed the bytes again. Replacing it instead would
+    // leave the old one holding a serialisation the framework had already
+    // scheduled for the next frame -- and that callback, arriving at a bucket
+    // that no longer exists, takes the whole frame down with it. Replacing the
+    // *data* is what a device does anyway, and the framework does the swap
+    // itself: it hands out the new bucket first and disposes the old one after.
+    _manager.begin(kept: kept);
     journal.logNode('started again with the bytes, the way a device does');
   }
 
