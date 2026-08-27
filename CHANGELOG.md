@@ -18,6 +18,15 @@
   application and the node has a name of its own. This was the last of the three
   things `README.md` used to list under "what a node does not do" that was the
   node's own doing.
+* The page a node starts with is a floor for six more of the navigator's
+  names. `pushReplacement` on that page pushes over it rather than completing
+  it, `pushAndRemoveUntil` stops on it the way `popUntil` already did, and the
+  restorable twins — `restorablePushReplacement`,
+  `restorablePushReplacementNamed`, `restorablePushAndRemoveUntil` and
+  `restorablePushNamedAndRemoveUntil` — carry the same floor, since none of
+  them goes through the imperative pair. Before this each of the six ended in
+  an assertion of the framework about a page-based route and a pages API the
+  caller never touched.
 * `NodeNavigatorState.pop`, `maybePop` and `popUntil` are documented. They were
   overridden without a doc comment, so the API reference and the tooltip of an
   IDE showed what `NavigatorState` says about them — which for a node is untrue:

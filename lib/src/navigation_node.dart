@@ -1090,8 +1090,132 @@ final class NodeNavigatorState extends NavigatorState {
     // Stopping is the whole of the answer. Handing the pop over the way [pop]
     // does would take a route above for a walk that was never about the
     // outside, and it would do it once for every turn of the loop.
-    super.popUntil((route) => route is _NodePageRoute || predicate(route));
+    super.popUntil(_floorOfTheNode(predicate));
   }
+
+  /// Wraps [predicate] so that a walk down this stack ends on the node's own
+  /// page, whatever the caller's predicate says about it.
+  ///
+  /// The page a node starts with is page-based, and the framework completes no
+  /// such route imperatively — it asserts instead, naming a pages API the
+  /// caller never touched. A node does not empty itself, so that page is where
+  /// every one of these walks stops.
+  RoutePredicate _floorOfTheNode(RoutePredicate predicate) =>
+      (route) => route is _NodePageRoute || predicate(route);
+
+  /// Whether anything the caller put on this stack is still on it.
+  ///
+  /// `false` means the node's own page is all there is, and that page is not
+  /// the caller's to replace or remove.
+  bool get _hasSomethingToReplace => canPop();
+
+  /// Pushes [newRoute] in place of the top route, or over the node's own page.
+  ///
+  /// Unlike [NavigatorState.pushReplacement], this never completes the page the
+  /// node starts with: when that page is all there is, there is nothing to
+  /// replace, and [newRoute] is pushed over it. [result] goes nowhere then,
+  /// because nothing was completed to receive it.
+  @optionalTypeArgs
+  @override
+  Future<T?> pushReplacement<T extends Object?, TO extends Object?>(
+    Route<T> newRoute, {
+    TO? result,
+  }) =>
+      _hasSomethingToReplace
+          ? super.pushReplacement<T, TO>(newRoute, result: result)
+          : push<T>(newRoute);
+
+  /// Pushes [newRoute] and removes the routes under it until [predicate] says
+  /// to stop, or until the node's own page.
+  ///
+  /// Unlike [NavigatorState.pushAndRemoveUntil], the walk ends on the page the
+  /// node starts with even when [predicate] never matches — the same floor
+  /// [popUntil] stops on.
+  @optionalTypeArgs
+  @override
+  Future<T?> pushAndRemoveUntil<T extends Object?>(
+    Route<T> newRoute,
+    RoutePredicate predicate,
+  ) =>
+      super.pushAndRemoveUntil<T>(newRoute, _floorOfTheNode(predicate));
+
+  /// The restorable [pushReplacement], with the node's own page as the floor.
+  ///
+  /// Unlike [NavigatorState.restorablePushReplacement], this pushes over the
+  /// page the node starts with rather than completing it. The twins do not go
+  /// through the imperative methods above — each hands its own entry to the
+  /// navigator — so each carries the floor itself.
+  @optionalTypeArgs
+  @override
+  String restorablePushReplacement<T extends Object?, TO extends Object?>(
+    RestorableRouteBuilder<T> routeBuilder, {
+    TO? result,
+    Object? arguments,
+  }) =>
+      _hasSomethingToReplace
+          ? super.restorablePushReplacement<T, TO>(
+              routeBuilder,
+              result: result,
+              arguments: arguments,
+            )
+          : restorablePush<T>(routeBuilder, arguments: arguments);
+
+  /// The restorable [pushReplacement] by name, with the node's own page as the
+  /// floor.
+  ///
+  /// Unlike [NavigatorState.restorablePushReplacementNamed], this pushes over
+  /// the page the node starts with rather than completing it. The name is
+  /// built from the table the navigator above lends this one.
+  @optionalTypeArgs
+  @override
+  String restorablePushReplacementNamed<T extends Object?, TO extends Object?>(
+    String routeName, {
+    TO? result,
+    Object? arguments,
+  }) =>
+      _hasSomethingToReplace
+          ? super.restorablePushReplacementNamed<T, TO>(
+              routeName,
+              result: result,
+              arguments: arguments,
+            )
+          : restorablePushNamed<T>(routeName, arguments: arguments);
+
+  /// The restorable [pushAndRemoveUntil], with the node's own page as the
+  /// floor.
+  ///
+  /// Unlike [NavigatorState.restorablePushAndRemoveUntil], the walk ends on the
+  /// page the node starts with even when [predicate] never matches.
+  @optionalTypeArgs
+  @override
+  String restorablePushAndRemoveUntil<T extends Object?>(
+    RestorableRouteBuilder<T> newRouteBuilder,
+    RoutePredicate predicate, {
+    Object? arguments,
+  }) =>
+      super.restorablePushAndRemoveUntil<T>(
+        newRouteBuilder,
+        _floorOfTheNode(predicate),
+        arguments: arguments,
+      );
+
+  /// The restorable [pushAndRemoveUntil] by name, with the node's own page as
+  /// the floor.
+  ///
+  /// Unlike [NavigatorState.restorablePushNamedAndRemoveUntil], the walk ends
+  /// on the page the node starts with even when [predicate] never matches.
+  @optionalTypeArgs
+  @override
+  String restorablePushNamedAndRemoveUntil<T extends Object?>(
+    String newRouteName,
+    RoutePredicate predicate, {
+    Object? arguments,
+  }) =>
+      super.restorablePushNamedAndRemoveUntil<T>(
+        newRouteName,
+        _floorOfTheNode(predicate),
+        arguments: arguments,
+      );
 
   /// Pops the top route of this navigator, or leaves the node.
   ///

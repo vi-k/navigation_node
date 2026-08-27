@@ -259,6 +259,16 @@ controller until the application puts one there. Wrap the node in a
 stack of one navigator, and a node never empties itself, so a predicate
 matching nothing inside the node ends there rather than leaving.
 
+**Replacing that page, or removing it, is not something a caller does.** It is
+the node. `pushReplacement` on it pushes over it instead, since there is
+nothing there to replace; `pushAndRemoveUntil` stops on it the way `popUntil`
+does. Both hold for the restorable twins — `restorablePushReplacement`,
+`restorablePushReplacementNamed`, `restorablePushAndRemoveUntil` and
+`restorablePushNamedAndRemoveUntil` — and for the named forms that go through
+them. Without that floor the framework asserts, naming a pages API the caller
+never touched: the page a node starts with is page-based, and no page-based
+route is completed imperatively.
+
 ## One node per tab: `NavigationNode(enabled:)`
 
 A node takes part in the system back of the route it stands on. That is the

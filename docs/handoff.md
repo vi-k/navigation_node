@@ -158,7 +158,7 @@ not do» остались `Hero` — это устройство самого Fl
 **Гейт §6 пройден целиком 2026-08-27**, после проработки находок ревью
 дельты, на полу 3.27.0:
 
-- `fvm flutter test` — **78 тестов**, все зелёные;
+- `fvm flutter test` — **84 теста**, все зелёные;
 - `fvm flutter analyze` — 0 issues (корень обходит и `example/`);
 - `fvm dart format --set-exit-if-changed lib test` — 0 changed (4 файла);
 - `fvm dart doc --dry-run` — 0 warnings, 0 errors, уже со строгим

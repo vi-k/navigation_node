@@ -1,6 +1,6 @@
 # navigation_node
 
-> Перевод `README.md` (blob `53a078fbc68730c3f26158db580237516569d0f7`).
+> Перевод `README.md` (blob `74aba2c24515f06191fbaa1ce2ecff01150e58f2`).
 > Правится в том же коммите, что и оригинал; проверка — `sh docs/ru/check.sh`.
 
 [![pub version](https://img.shields.io/pub/v/navigation_node)](https://pub.dev/packages/navigation_node)
@@ -264,6 +264,16 @@ navigator.restorablePush(_summary);  // и теперь не вернётся т
 **`popUntil` останавливается на собственной странице узла.** Его обход — про
 стек одного навигатора, а узел никогда не остаётся пустым, поэтому предикат, не
 совпавший ни с чем внутри узла, кончает обход там, а не уходит наружу.
+
+**Заменять эту страницу или убирать её — не дело вызывающего.** Она и есть
+узел. `pushReplacement` по ней вместо замены пушит поверх — заменять там
+нечего; `pushAndRemoveUntil` останавливается на ней так же, как `popUntil`. То
+же верно для restorable-близнецов — `restorablePushReplacement`,
+`restorablePushReplacementNamed`, `restorablePushAndRemoveUntil` и
+`restorablePushNamedAndRemoveUntil` — и для именованных форм, которые идут через
+них. Без этого пола фреймворк падает на ассерте, называя pages API, которого
+вызывающий не касался: страница узла page-based, а page-based маршрут
+imperative-путём не завершают.
 
 ## По узлу на вкладку: `NavigationNode(enabled:)`
 

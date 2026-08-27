@@ -1178,6 +1178,158 @@ void main() {
       );
     });
 
+    // The page a node starts with is page-based, and the framework will not
+    // complete such a route imperatively -- it asserts instead, naming a pages
+    // API the caller never touched. Six public names reach that page, and all
+    // six now find a floor there rather than an assertion: a node does not
+    // empty itself, the way `pop` and `popUntil` already say.
+    testWidgets('pushReplacement over the page of the node pushes over it', (
+      tester,
+    ) async {
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(_Host(useNode: true, navigatorKey: key));
+
+      unawaited(key.currentState!.pushReplacement<void, void>(_replacement()));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('replacement'), findsOneWidget);
+      expect(
+        key.currentState!.canPop(),
+        isTrue,
+        reason: 'the page of the node is under it, not replaced by it',
+      );
+    });
+
+    testWidgets('pushAndRemoveUntil stops at the page of the node', (
+      tester,
+    ) async {
+      final key = GlobalKey<NodeNavigatorState>();
+
+      await tester.pumpWidget(_Host(useNode: true, navigatorKey: key));
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      unawaited(
+        key.currentState!
+            .pushAndRemoveUntil<void>(_replacement(), (_) => false),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('replacement'), findsOneWidget);
+      expect(
+        key.currentState!.canPop(),
+        isTrue,
+        reason: 'a predicate matching nothing took everything the caller had '
+            'pushed and stopped on the page of the node',
+      );
+    });
+
+    // The restorable twins do not go through the two above -- they build their
+    // entry and hand it to the navigator themselves -- so each needs the floor
+    // of its own, and a test of its own to say so.
+    testWidgets(
+      'restorablePushReplacement over the page of the node pushes over it',
+      (
+        tester,
+      ) async {
+        final key = GlobalKey<NodeNavigatorState>();
+
+        await tester.pumpWidget(
+          _RestorationHost(navigatorKey: key, scopeId: 'node'),
+        );
+
+        key.currentState!.restorablePushReplacement<void, void>(
+          _restorableDetails,
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('details'), findsOneWidget);
+        expect(key.currentState!.canPop(), isTrue);
+      },
+      experimentalLeakTesting: _restorationLeaks,
+    );
+
+    testWidgets(
+      'restorablePushReplacementNamed over the page of the node pushes over it',
+      (
+        tester,
+      ) async {
+        final key = GlobalKey<NodeNavigatorState>();
+
+        await tester.pumpWidget(
+          _RestorationHost(navigatorKey: key, scopeId: 'node'),
+        );
+
+        key.currentState!.restorablePushReplacementNamed<void, void>(
+          '/details',
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('named details'), findsOneWidget);
+        expect(key.currentState!.canPop(), isTrue);
+      },
+      experimentalLeakTesting: _restorationLeaks,
+    );
+
+    testWidgets(
+      'restorablePushAndRemoveUntil stops at the page of the node',
+      (
+        tester,
+      ) async {
+        final key = GlobalKey<NodeNavigatorState>();
+
+        await tester.pumpWidget(
+          _RestorationHost(navigatorKey: key, scopeId: 'node'),
+        );
+        key.currentState!.restorablePush(_restorableSummary);
+        await tester.pumpAndSettle();
+
+        key.currentState!.restorablePushAndRemoveUntil<void>(
+          _restorableDetails,
+          (_) => false,
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('details'), findsOneWidget);
+        expect(find.text('summary'), findsNothing);
+        expect(key.currentState!.canPop(), isTrue);
+      },
+      experimentalLeakTesting: _restorationLeaks,
+    );
+
+    testWidgets(
+      'restorablePushNamedAndRemoveUntil stops at the page of the node',
+      (
+        tester,
+      ) async {
+        final key = GlobalKey<NodeNavigatorState>();
+
+        await tester.pumpWidget(
+          _RestorationHost(navigatorKey: key, scopeId: 'node'),
+        );
+        key.currentState!.restorablePush(_restorableSummary);
+        await tester.pumpAndSettle();
+
+        key.currentState!.restorablePushNamedAndRemoveUntil<void>(
+          '/details',
+          (_) => false,
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('named details'), findsOneWidget);
+        expect(find.text('summary'), findsNothing);
+        expect(key.currentState!.canPop(), isTrue);
+      },
+      experimentalLeakTesting: _restorationLeaks,
+    );
+
     // An application declares its routes in one place, and a node used to know
     // nothing about them: a named push inside it reached a navigator with no
     // route table and ended in an assertion of the framework. The node's
@@ -3408,6 +3560,12 @@ final class _Thrower extends NavigatorObserver {
     }
   }
 }
+
+/// A route the replacement tests push, so that what lands has a name.
+Route<void> _replacement() => MaterialPageRoute<void>(
+      builder: (context) =>
+          const Scaffold(body: Center(child: Text('replacement'))),
+    );
 
 /// Builds the page the restoration tests push.
 ///
