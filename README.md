@@ -171,18 +171,45 @@ it: `restorablePush` and its neighbours, which keep a reference to a static
 builder rather than a closure. An ordinary `push` is never restored — that is
 the framework's rule and not the node's. The builder that is kept must be a
 top-level or static function annotated with `@pragma('vm:entry-point')`: the
-navigator asks for it *by name* when it builds the route again, and the name has
-to survive the compiler for that. A test finds it without the annotation and an
-application does not, so it is an easy thing to ship broken. `restorablePushNamed` works from
-inside a node like any other name, and the route table it needs is borrowed
-from the navigator above when the name is built anew.
+navigator asks for it *by name* when it builds the route again, and the name
+has to survive the compiler for that. A test finds it without the annotation
+and an application does not, so it is an easy thing to ship broken.
+`restorablePushNamed` works from inside a node like any other name, and the
+route table it needs is borrowed from the navigator above when the name is
+built anew.
 
-Two nodes on one route need two names. The framework says so itself —
-*Multiple owners claimed child RestorationBuckets with the same IDs* — rather
-than quietly mixing one stack into the other. And none of this happens unless
-the application enables restoration for itself, with
-`MaterialApp.restorationScopeId` or a `RootRestorationScope` of its own; a node
-given a name under an application that restores nothing simply keeps it unused.
+An ordinary `push` costs more than itself. The framework reads the stack from
+the node's page upwards and stops writing anything down at the first route it
+cannot rebuild, so a restorable push made *over* an ordinary one goes with it:
+
+```dart
+navigator.restorablePush(_details);  // comes back
+navigator.push(...);                 // never does
+navigator.restorablePush(_summary);  // and now neither does this one
+```
+
+A stack meant to survive has to be restorable the whole way up.
+
+On the web `restorablePush` restores nothing at all: the handle it keeps is
+marked unrestorable there ([flutter#33615][web-issue]), and no annotation
+changes that. `restorablePushNamed` is unaffected — a name needs no handle.
+
+A name has to be unique among everything claiming a bucket from the same
+scope. Two nodes standing side by side on one route need two names; a node
+nested inside another claims from the page of the node above it and needs
+nothing of the sort. A debug build says so itself —
+*Multiple owners claimed child RestorationBuckets with the same IDs* — but the
+check is an assertion, so a release build drops one of the two stacks in
+silence.
+
+And none of this happens unless restoration reaches the node, which it does
+through the whole chain above it. `MaterialApp.restorationScopeId`, or a
+`RootRestorationScope` of its own, turns it on for the application; every
+`Navigator` between that and the node — another `NavigationNode` included —
+needs a `restorationScopeId` too. One link without a name hands the node below
+an empty bucket, and its stack comes back empty, without a word anywhere.
+
+[web-issue]: https://github.com/flutter/flutter/issues/33615
 
 ## Observers
 

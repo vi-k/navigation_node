@@ -206,16 +206,37 @@ final class NavigationNode extends StatefulWidget {
   /// static function annotated with `@pragma('vm:entry-point')`, since the
   /// navigator asks for it by name when it builds the route anew; without the
   /// annotation a test still passes and an application fails at the moment of
-  /// restoring, with «To closurize … from native code, it must be annotated». `restorablePushNamed` works from
-  /// inside a node like any other name: the route table is borrowed from the
-  /// navigator above, and it is borrowed again when the name is built anew.
+  /// restoring, with "To closurize ... from native code, it must be
+  /// annotated". `restorablePushNamed` works from inside a node like any other
+  /// name: the route table is borrowed from the navigator above, and it is
+  /// borrowed again when the name is built anew.
+  ///
+  /// An ordinary `push` costs more than itself. The framework reads the stack
+  /// from the node's page upwards and stops writing anything down at the first
+  /// route it cannot rebuild, so a `restorablePush` made over an ordinary one
+  /// is dropped along with it. A stack meant to survive has to be restorable
+  /// the whole way up.
+  ///
+  /// On the web `restorablePush` restores nothing at all: the handle it keeps
+  /// is marked unrestorable there (flutter/flutter#33615), and the annotation
+  /// makes no difference to that. `restorablePushNamed` is unaffected — a name
+  /// needs no handle.
   ///
   /// The name has to be unique among everything that claims a bucket from the
-  /// same scope — two nodes on one route need two names, and the framework
-  /// says so with «Multiple owners claimed child RestorationBuckets with the
-  /// same IDs» rather than quietly mixing the two. And none of it happens at
-  /// all unless the application enables restoration for itself:
-  /// `MaterialApp.restorationScopeId`, or a `RootRestorationScope` of its own.
+  /// same scope: two nodes standing side by side on one route need two names,
+  /// while a node nested inside another claims from the page of the node above
+  /// it and needs nothing of the sort. A debug build says so itself, with
+  /// "Multiple owners claimed child RestorationBuckets with the same IDs", but
+  /// the check is an assertion — a release build drops one of the two stacks
+  /// without a word.
+  ///
+  /// And none of it happens unless restoration reaches the node, which it does
+  /// through the whole chain above it: `MaterialApp.restorationScopeId` or a
+  /// `RootRestorationScope` turns it on for the application, and every
+  /// `Navigator` between that and this node — another [NavigationNode]
+  /// included — needs a `restorationScopeId` of its own. A link without one
+  /// hands this node an empty bucket, and the stack comes back empty, in
+  /// silence.
   final String? restorationScopeId;
 
   /// Creates a navigation node around [child].

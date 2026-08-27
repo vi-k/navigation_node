@@ -3,25 +3,34 @@
 * The stack inside a node can be restored. `NavigationNode(restorationScopeId:)`
   gives the node's navigator a name to keep it under, and what was pushed with
   `restorablePush` — or `restorablePushNamed`, through the route table the node
-  borrows — comes back after the application is killed and started again. An
+  borrows — comes back after the application is killed and started again. The
+  builder of a restorable route has to be a top-level or static function
+  annotated with `@pragma('vm:entry-point')`: the navigator asks for it by name,
+  and a test passes without the annotation where an application fails. An
   ordinary `push` carries a closure and is never restored, which is the
-  framework's rule rather than the node's; two nodes on one route need two
-  names, and the framework says so itself rather than mixing one stack into the
-  other. Nothing happens at all unless the application enables restoration for
-  itself. This was the last of the three things `README.md` used to list under
-  "what a node does not do" that was the node's own doing.
+  framework's rule rather than the node's — and it costs more than itself, since
+  a restorable push made over an ordinary one is dropped along with it. On the
+  web `restorablePush` restores nothing at all, annotation or no;
+  `restorablePushNamed` is unaffected. Two nodes side by side on one route need
+  two names — a nested node claims from the page above it and needs no second
+  name — and a debug build says so itself while a release build drops one of the
+  two stacks in silence. None of it happens unless every navigator between the
+  application and the node has a name of its own. This was the last of the three
+  things `README.md` used to list under "what a node does not do" that was the
+  node's own doing.
 * `NodeNavigatorState.pop`, `maybePop` and `popUntil` are documented. They were
   overridden without a doc comment, so the API reference and the tooltip of an
   IDE showed what `NavigatorState` says about them — which for a node is untrue:
   its `popUntil` stops on the node's own page, and `pop` on that page leaves the
   node instead of taking it.
 * The example gained four lessons, for the four things it did not show: one
-  node per tab and what `enabled` is for, a name pushed inside a node, and the
-  observers of an application hearing what a node does. Nine lessons now, and
-  the tab one is the lesson to read first — it is the only shape where a node
-  changes an application's behaviour without being asked to. The tenth shows
-  restoration on a desktop, where the platform provides none: it keeps the
-  blob itself and hands it back the way the engine would.
+  node per tab and what `enabled` is for, a name pushed inside a node, the
+  observers of an application hearing what a node does, and what survives a
+  restart. Ten lessons now, and the tab one is the lesson to read first — it is
+  the only shape where a node changes an application's behaviour without being
+  asked to. The tenth shows restoration on a desktop, where the platform
+  provides none: it keeps the blob itself and hands it back the way the engine
+  would.
 * `README.md` is rearranged around the reader rather than the widget. It opens
   with what a node is for, shows the tree with and without one, and then shows
   the code that uses it — including `useRootNavigator: false`, which used to be
