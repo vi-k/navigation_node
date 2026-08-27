@@ -1,14 +1,8 @@
 # The package's own strict config, one level up: an example is code the reader
-# copies, so it answers to the same rules as `lib/`.
-analyzer:
-  exclude:
-    - build/**
-    - android/**
-    - ios/**
-    - web/**
-    - windows/**
-    - macos/**
-    - linux/**
+# copies, so it answers to the same rules as `lib/`. Its `analyzer: exclude:`
+# list comes down with the include: those globs are matched against whatever
+# package is being analysed, so `macos/**` there already covers this example's
+# own `macos/`, and a second copy here would say nothing the first does not.
 include: ../analysis_options.yaml
 
 linter:
