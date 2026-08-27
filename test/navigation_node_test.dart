@@ -1519,6 +1519,37 @@ void main() {
       experimentalLeakTesting: _restorationLeaks,
     );
 
+    // The node's own page carries a restoration identifier only while the node
+    // has one, and `Page.restorationId` is final: a name switched on has to
+    // rebuild the page list, or the navigator keeps the page it already had --
+    // the one that takes no part in restoration -- and restores an empty stack
+    // under it.
+    testWidgets(
+      'a name given to a node already alive still restores its stack',
+      (
+        tester,
+      ) async {
+        final key = GlobalKey<NodeNavigatorState>();
+
+        await tester.pumpWidget(_RestorationHost(navigatorKey: key));
+        await tester.pumpAndSettle();
+
+        await tester.pumpWidget(
+          _RestorationHost(navigatorKey: key, scopeId: 'node'),
+        );
+        await tester.pumpAndSettle();
+
+        key.currentState!.restorablePush(_restorableDetails);
+        await tester.pumpAndSettle();
+        expect(find.text('details'), findsOneWidget);
+
+        await tester.restartAndRestore();
+
+        expect(find.text('details'), findsOneWidget);
+      },
+      experimentalLeakTesting: _restorationLeaks,
+    );
+
     // The route table is borrowed from the navigator above, and a restorable
     // push by name goes through that table: the two features have to work in
     // the same breath, since a name is how most of this gets pushed at all.
@@ -1555,15 +1586,34 @@ void main() {
           _TwoRestorationHosts(first: first, second: second),
         );
         first.currentState!.restorablePush(_restorableDetails);
+        second.currentState!.restorablePush(_restorableSummary);
         await tester.pumpAndSettle();
 
         await tester.restartAndRestore();
 
-        expect(find.text('details'), findsOneWidget);
+        // Pushed into both, and found under each: the point is not that
+        // something came back but that each node was handed back its own.
         expect(
-          find.text('second node'),
+          find.descendant(
+            of: find.byKey(_firstNode),
+            matching: find.text('details'),
+          ),
           findsOneWidget,
-          reason: 'the node that was not pushed into is where it was',
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(_secondNode),
+            matching: find.text('summary'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(_firstNode),
+            matching: find.text('summary'),
+          ),
+          findsNothing,
+          reason: 'neither stack ended up under the other node',
         );
       },
       experimentalLeakTesting: _restorationLeaks,
@@ -3375,6 +3425,20 @@ Route<void> _restorableDetails(BuildContext context, Object? arguments) =>
           const Scaffold(body: Center(child: Text('details'))),
     );
 
+/// Builds the page the second node pushes, so that each of the two has a page
+/// of its own to be handed back.
+@pragma('vm:entry-point')
+Route<void> _restorableSummary(BuildContext context, Object? arguments) =>
+    MaterialPageRoute<void>(
+      builder: (context) =>
+          const Scaffold(body: Center(child: Text('summary'))),
+    );
+
+/// Names the two nodes of [_TwoRestorationHosts], so a test can ask what is
+/// under each rather than what is on screen anywhere.
+const _firstNode = ValueKey('first node');
+const _secondNode = ValueKey('second node key');
+
 /// An application that restores, with a node that may or may not.
 final class _RestorationHost extends StatelessWidget {
   final GlobalKey<NodeNavigatorState> navigatorKey;
@@ -3411,6 +3475,7 @@ final class _TwoRestorationHosts extends StatelessWidget {
           children: [
             Expanded(
               child: NavigationNode(
+                key: _firstNode,
                 navigatorKey: first,
                 restorationScopeId: 'first',
                 child: const _ObservedContent(),
@@ -3418,6 +3483,7 @@ final class _TwoRestorationHosts extends StatelessWidget {
             ),
             Expanded(
               child: NavigationNode(
+                key: _secondNode,
                 navigatorKey: second,
                 restorationScopeId: 'second',
                 child: const Scaffold(

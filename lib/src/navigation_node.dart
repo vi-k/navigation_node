@@ -1194,6 +1194,12 @@ extension PreviousNavigatorExtension on NavigatorState {
 }
 
 /// The name the node's own page is entered under, inside the node's own bucket.
+///
+/// Part of the format of what gets written down, now that a node restores: the
+/// framework looks the routes pushed over that page up under `p+node` when it
+/// builds the stack again. Renaming it leaves every blob an earlier version
+/// wrote restoring an empty stack, and silently -- a name that matches nothing
+/// is not an error to the framework, just an absence.
 const _nodePageRestorationId = 'node';
 
 /// What the node was doing when it could not re-throw.

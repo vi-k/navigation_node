@@ -396,6 +396,11 @@ void main() {
   testWidgets('lesson 10: only the restorable push comes back', (tester) async {
     await openLesson(tester, lessons[9].title);
 
+    final journal = JournalScope.of(
+      tester.element(find.byType(MaterialApp)),
+      listen: false,
+    );
+
     await tester.tap(find.text('Push restorably'));
     await tester.pumpAndSettle();
     expect(find.text('Pushed restorably'), findsOneWidget);
@@ -403,6 +408,14 @@ void main() {
     await tester.tap(find.text('Kill and bring it back'));
     await tester.pumpAndSettle();
 
+    // Asked first, because the rest of this test would read the same on a
+    // button that did nothing at all: a page that never went away is also a
+    // page that is still there.
+    expect(
+      journal.entries.map((entry) => entry.message),
+      contains('started again with the bytes, the way a device does'),
+      reason: 'the kill happened, and what is on screen came back from bytes',
+    );
     expect(
       find.text('Pushed restorably'),
       findsOneWidget,

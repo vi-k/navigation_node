@@ -46,8 +46,10 @@ final restorationLesson = Lesson(
     'macOS never kills an application for you and keeps nothing, so this '
         'lesson keeps the data itself and hands it back on the button. What is '
         'real here is the data and the road it takes in — the same call the '
-        'engine makes after a true restart. What is pretended is the dying: '
-        'the widgets never went anywhere.',
+        'engine makes after a true restart — and the dying of the tree below: '
+        'the node, its navigator and every route on it really do go, and what '
+        'comes back is built again from the bytes. What is pretended is only '
+        'that the process died, and everything outside this lesson with it.',
   ],
   instruction: 'push one of the two pages, press "Kill and bring it back", and '
       'see which of them is there afterwards. On Android the real thing is '
@@ -112,8 +114,12 @@ class _StageState extends State<_Stage> {
 
     // Started after this build rather than inside it. Once the manager has
     // been started its bucket arrives *synchronously* -- `rootBucket` is a
-    // `SynchronousFuture` from then on -- so starting it here would have this
-    // widget call `setState` in the middle of its own build.
+    // `SynchronousFuture` from then on -- so starting it here would call
+    // `setState` while this widget is still being mounted. The framework
+    // allows that and it costs nothing: the element is dirty already, and
+    // `markNeedsBuild` returns before it does anything. What it costs is the
+    // reading -- the bucket would arrive by two roads instead of one, and the
+    // quiet one would be the one that runs first.
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _manager.begin();
@@ -128,11 +134,12 @@ class _StageState extends State<_Stage> {
           return;
         }
 
-        // The same care again, for the same reason: this can be reached from
-        // inside a build -- a hot reload rebuilds everything and the timers of
-        // an application go on running through it -- and `setState` there is an
-        // error the framework reports and then trips over, one frame after
-        // another.
+        // A guard rather than a cure. Nothing in this lesson reaches here
+        // from inside a build: the manager is started from the callback above
+        // and from the button, and neither of those is one. But a listener is
+        // not a thing whose callers stay listed, and `setState` in the
+        // persistent-callbacks phase is an error the framework reports and
+        // then trips over, one frame after another.
         if (SchedulerBinding.instance.schedulerPhase ==
             SchedulerPhase.persistentCallbacks) {
           SchedulerBinding.instance.addPostFrameCallback((_) {

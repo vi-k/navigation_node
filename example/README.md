@@ -76,8 +76,9 @@ the press, which on a phone is the moment the app closes.
 10. **What survives a restart** — `restorationScopeId` has the node write its
     history down, and a restorable push comes back where an ordinary one does
     not. macOS keeps nothing and kills nothing, so the lesson keeps the data
-    itself and hands it back on a button: the road the bytes take in is the
-    real one, the dying is pretended.
+    itself and hands it back on a button. The road the bytes take in is the
+    real one, and so is the dying of the tree below — the node, its navigator
+    and its routes all go. Pretended is only the process going with them.
 
 ## What to read while you press
 
