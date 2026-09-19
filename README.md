@@ -194,13 +194,12 @@ On the web `restorablePush` restores nothing at all: the handle it keeps is
 marked unrestorable there ([flutter#33615][web-issue]), and no annotation
 changes that. `restorablePushNamed` is unaffected — a name needs no handle.
 
-A name has to be unique among everything claiming a bucket from the same
-scope. Two nodes standing side by side on one route need two names; a node
-nested inside another claims from the page of the node above it and needs
-nothing of the sort. A debug build says so itself —
-*Multiple owners claimed child RestorationBuckets with the same IDs* — but the
-check is an assertion, so a release build drops one of the two stacks in
-silence.
+A name has to be unique among everything claiming a bucket from the same scope.
+Two nodes standing side by side on one route need two names; a node nested
+inside another claims from the page of the node above it and needs nothing of
+the sort. A debug build says so itself — *Multiple owners claimed child
+RestorationBuckets with the same IDs* — but the check is an assertion, so a
+release build drops one of the two stacks in silence.
 
 And none of this happens unless restoration reaches the node, which it does
 through the whole chain above it. `MaterialApp.restorationScopeId`, or a
@@ -249,11 +248,11 @@ says nothing about the routes it takes with it.
 
 ## What a node does not do
 
-**A `Hero` does not fly between routes pushed inside a node.** That is Flutter's
-own doing rather than the node's: a `Navigator` hides the `HeroControllerScope`
-above it from its own subtree, so every nested navigator is left without a hero
-controller until the application puts one there. Wrap the node in a
-`HeroControllerScope` of your own if you want the animation.
+**A `Hero` does not fly between routes pushed inside a node.** That is
+Flutter's own doing rather than the node's: a `Navigator` hides the
+`HeroControllerScope` above it from its own subtree, so every nested navigator
+is left without a hero controller until the application puts one there. Wrap
+the node in a `HeroControllerScope` of your own if you want the animation.
 
 **`popUntil` stops on the node's own page.** The walk it makes is about the
 stack of one navigator, and a node never empties itself, so a predicate
@@ -309,6 +308,6 @@ navigator above it rather than on the route both stand on.
 
 This package was part of [scopo](https://pub.dev/packages/scopo) until 0.11.0,
 and the two are made for each other: a scope over a screen is exactly the thing
-a pushed route loses, and a node is what keeps it. Neither depends on the other
-— this package imports nothing but Flutter — so a node is worth having whatever
-puts state over your screens.
+a pushed route loses, and a node is what keeps it. Neither depends on the
+other — this package imports nothing but Flutter — so a node is worth having
+whatever puts state over your screens.
